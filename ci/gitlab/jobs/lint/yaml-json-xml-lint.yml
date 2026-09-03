@@ -1,0 +1,46 @@
+# YAML, JSON, XML linting
+# Validates configuration files for syntax and formatting
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file: 'ci/gitlab/jobs/lint/yaml-json-xml-lint.yml'
+#
+#   Lint Config Files:
+#     extends: .lint-yaml-json-xml
+
+.lint-yaml-json-xml:
+  image: debian:stable-slim
+  stage: Lint
+  variables:
+    # Keep defaults aligned with legacy project behavior; enable per project as needed.
+    LINT_YAML_ENABLED: "false"
+    LINT_XML_ENABLED: "false"
+  script:
+    - apt-get update && apt-get install jsonlint yamllint libxml2-utils make curl -yq
+    - ln -s /usr/bin/jsonlint-php /usr/bin/jsonlint || true
+    - echo "Linting JSON files"
+    - find ./ -type f -name "*.json" -not -path "*/node_modules/*" -not -path "*/target/*" -exec jsonlint -q {} \;
+    - |
+      if [ "${LINT_YAML_ENABLED}" = "true" ]; then
+        echo "Linting YAML files"
+        find ./ -type f \( -name "*.yml" -o -name "*.yaml" \) -not -path "*/node_modules/*" -not -path "*/target/*" -exec yamllint -d "{extends: relaxed, rules: {line-length: {max: 160}}}" {} \; || true
+      else
+        echo "Skipping YAML lint (LINT_YAML_ENABLED=${LINT_YAML_ENABLED})"
+      fi
+    - |
+      if [ "${LINT_XML_ENABLED}" = "true" ]; then
+        echo "Linting XML files"
+        find ./ -type f \( -iname "*.xml" ! -iname pom.xml \) -not -path "*/target/*" -exec xmllint --noout {} \; || true
+      else
+        echo "Skipping XML lint (LINT_XML_ENABLED=${LINT_XML_ENABLED})"
+      fi
+
+.lint-json-only:
+  image: debian:stable-slim
+  stage: Lint
+  script:
+    - apt-get update && apt-get install jsonlint python3-pkg-resources -yq
+    - ln -s /usr/bin/jsonlint-php /usr/bin/jsonlint || true
+    - echo "Linting JSON files"
+    - find ./ -type f -name "*.json" -not -path "*/node_modules/*" -not -path "*/target/*" -exec jsonlint -q {} \;

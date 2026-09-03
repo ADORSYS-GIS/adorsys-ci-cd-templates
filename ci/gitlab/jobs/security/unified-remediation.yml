@@ -1,0 +1,142 @@
+# Unified Security Remediation CI Job Templates
+# Aggregates findings from OWASP, Trivy, CycloneDX, and Renovate; resolves
+# fix versions; and either augments an existing Renovate MR or creates a new one.
+#
+# Required CI/CD Variables:
+#   GITLAB_TOKEN  - GitLab PAT with api scope (for MR creation/augmentation)
+#   CI_JOB_TOKEN  - Automatically provided by GitLab CI (for script download)
+#
+# Optional Variables:
+#   GITLAB_CI_TEMPLATES_REF - Override the auto-detected tag (e.g. "v1.3.5")
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file: 'ci/gitlab/jobs/security/unified-remediation.yml'
+#
+#   Unified Remediation (push):
+#     extends:
+#       - .unified-remediation-base
+#       - .unified-remediation-download-scripts
+#
+# For scheduled scans (target + develop + support branches), also include:
+#       file: 'ci/gitlab/jobs/security/unified-remediation-scheduled.yml'
+#
+#   Unified Remediation:
+#     extends: .unified-remediation-scheduled
+
+.unified-remediation-base:
+  image: python:3.11-slim
+  stage: security-scan
+  variables:
+    PYTHONUNBUFFERED: "1"
+    SEVERITY_FILTER: "HIGH,CRITICAL"
+    OFFLINE_MODE: "false"
+    GITLAB_CI_TEMPLATES_REF: ""
+    SECURITY_BASE_BRANCH: ""
+  script:
+    - chmod +x /scripts/run-unified-remediation.sh
+    - /scripts/run-unified-remediation.sh
+  artifacts:
+    when: always
+    paths:
+      - security-reports/unified-findings.json
+      - security-reports/remediation-plan.json
+      - security-reports/summary.json
+      - security-reports/pom-updates.xml
+      - security-reports/dockerfile-updates.txt
+      - security-reports/.fixes-applied
+    # pom-updates.xml, dockerfile-updates.txt, and .fixes-applied are only
+    # written when actionable fixes exist. GitLab warns on missing paths but
+    # the job still succeeds — this is expected behaviour.
+    expire_in: "30 days"
+  allow_failure: true
+
+.unified-remediation-download-scripts:
+  before_script:
+    - apt-get update && apt-get install -y git jq curl nodejs npm --no-install-recommends
+    - pip install --quiet requests
+    - mkdir -p /scripts
+    - |
+      if [ -z "$GITLAB_CI_TEMPLATES_REF" ]; then
+        GITLAB_CI_TEMPLATES_REF=$(curl -sL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+          "${GITLAB_API:-https://git.adorsys.de}/api/v4/projects/adorsys%2Fxs2a%2Fgitlab-ci-templates/repository/tags?order_by=version&sort=desc&per_page=1" \
+          | jq -r '.[0].name')
+        echo "Auto-detected gitlab-ci-templates ref: ${GITLAB_CI_TEMPLATES_REF}"
+      else
+        echo "Using configured gitlab-ci-templates ref: ${GITLAB_CI_TEMPLATES_REF}"
+      fi
+      if [ -z "$GITLAB_CI_TEMPLATES_REF" ]; then
+        echo "ERROR: Could not determine gitlab-ci-templates version tag."
+        echo "Set GITLAB_CI_TEMPLATES_REF manually or check CI_JOB_TOKEN permissions."
+        exit 1
+      fi
+      export GITLAB_CI_TEMPLATES_REF
+    - |
+      TEMPLATES_BASE_URL="https://git.adorsys.de/api/v4/projects/adorsys%2Fxs2a%2Fgitlab-ci-templates/repository/files"
+      echo "Downloading aggregator script @ ${GITLAB_CI_TEMPLATES_REF}..."
+      curl -sL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+        "${TEMPLATES_BASE_URL}/ci%2Fgitlab%2Fscripts%2Funified-security-aggregator.py/raw?ref=${GITLAB_CI_TEMPLATES_REF}" \
+        -o "/scripts/unified-security-aggregator.py" || {
+          echo "ERROR: Failed to download unified-security-aggregator.py. Check CI_JOB_TOKEN permissions."
+          exit 1
+        }
+      echo "Downloading MR creation script @ ${GITLAB_CI_TEMPLATES_REF}..."
+      curl -sL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+        "${TEMPLATES_BASE_URL}/ci%2Fgitlab%2Fscripts%2Fcreate-remediation-mr.sh/raw?ref=${GITLAB_CI_TEMPLATES_REF}" \
+        -o "/scripts/create-remediation-mr.sh" || {
+          echo "ERROR: Failed to download create-remediation-mr.sh. Check CI_JOB_TOKEN permissions."
+          exit 1
+        }
+      echo "Downloading MR description helper @ ${GITLAB_CI_TEMPLATES_REF}..."
+      curl -sL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+        "${TEMPLATES_BASE_URL}/ci%2Fgitlab%2Fscripts%2Fcreate-remediation-mr-description.sh/raw?ref=${GITLAB_CI_TEMPLATES_REF}" \
+        -o "/scripts/create-remediation-mr-description.sh" || {
+          echo "ERROR: Failed to download create-remediation-mr-description.sh. Check CI_JOB_TOKEN permissions."
+          exit 1
+        }
+      echo "Downloading remediation runner @ ${GITLAB_CI_TEMPLATES_REF}..."
+      curl -sL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+        "${TEMPLATES_BASE_URL}/ci%2Fgitlab%2Fscripts%2Frun-unified-remediation.sh/raw?ref=${GITLAB_CI_TEMPLATES_REF}" \
+        -o "/scripts/run-unified-remediation.sh" || {
+          echo "ERROR: Failed to download run-unified-remediation.sh. Check CI_JOB_TOKEN permissions."
+          exit 1
+        }
+      echo "Downloading remediation common functions @ ${GITLAB_CI_TEMPLATES_REF}..."
+      curl -sL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+        "${TEMPLATES_BASE_URL}/ci%2Fgitlab%2Fscripts%2Fremediation-common.sh/raw?ref=${GITLAB_CI_TEMPLATES_REF}" \
+        -o "/scripts/remediation-common.sh" || {
+          echo "ERROR: Failed to download remediation-common.sh. Check CI_JOB_TOKEN permissions."
+          exit 1
+        }
+      echo "Downloading remediation helper modules @ ${GITLAB_CI_TEMPLATES_REF}..."
+      for helper in \
+          remediation-common-git.sh \
+          remediation-common-mr-search.sh \
+          remediation-common-artifacts.sh \
+          remediation-common-report.sh; do
+        curl -sL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+          "${TEMPLATES_BASE_URL}/ci%2Fgitlab%2Fscripts%2F${helper}/raw?ref=${GITLAB_CI_TEMPLATES_REF}" \
+          -o "/scripts/${helper}" || {
+            echo "ERROR: Failed to download ${helper}. Check CI_JOB_TOKEN permissions."
+            exit 1
+          }
+      done
+      echo "Downloading security_aggregator package @ ${GITLAB_CI_TEMPLATES_REF}..."
+      mkdir -p /scripts/security_aggregator
+      for module in \
+          __init__.py __main__.py \
+          cli.py models.py utils.py \
+          owasp.py trivy.py cyclonedx.py \
+          aggregator.py fix_plan.py reporter.py \
+          resolver.py nvd.py versions.py \
+          maven_fixer.py maven_fixer_props.py maven_repo.py \
+          apply.py fixers.py; do
+        curl -sL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+          "${TEMPLATES_BASE_URL}/ci%2Fgitlab%2Fscripts%2Fsecurity_aggregator%2F${module}/raw?ref=${GITLAB_CI_TEMPLATES_REF}" \
+          -o "/scripts/security_aggregator/${module}" || {
+            echo "ERROR: Failed to download security_aggregator/${module}. Check CI_JOB_TOKEN permissions."
+            exit 1
+          }
+      done
+      chmod +x /scripts/create-remediation-mr.sh /scripts/run-unified-remediation.sh

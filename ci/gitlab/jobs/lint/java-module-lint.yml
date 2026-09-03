@@ -1,0 +1,36 @@
+# Java/backend module linting via Makefile target
+# Runs linting for Java backend modules that expose a make target.
+# Uses before_script: [] to prevent global project before_script from running
+# (e.g. docker login setup), since this job uses a plain Debian image.
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file: 'ci/gitlab/jobs/lint/java-module-lint.yml'
+#
+#   Lint (OBA Backend):
+#     extends: .lint-java-module
+#     except: [schedules, develop, master]
+#     variables:
+#       JAVA_LINT_TARGET: "lint-online-banking"
+#
+#   Lint (TPP Backend):
+#     extends: .lint-java-module
+#     except: [schedules, develop, master]
+#     variables:
+#       JAVA_LINT_TARGET: "lint-tpp-rest-server"
+#
+# Variables:
+#   JAVA_LINT_TARGET - The make target to invoke. Default: lint
+
+.lint-java-module:
+  image: debian:stable-slim
+  stage: Lint
+  before_script: []
+  variables:
+    JAVA_LINT_TARGET: "lint"
+  script:
+    - apt-get update && apt-get install --no-install-recommends make jsonlint yamllint libxml2-utils curl -yq
+    - ln -s /usr/bin/jsonlint-php /usr/bin/jsonlint || true
+    - make ${JAVA_LINT_TARGET}
+  cache: {}

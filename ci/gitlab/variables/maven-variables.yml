@@ -1,0 +1,36 @@
+# Maven common variables and cache configuration
+# Include this template to set up Maven caching and repository paths
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file: 'ci/gitlab/variables/maven-variables.yml'
+
+.variables-maven:
+  variables:
+    MAVEN_REPO_PATH: ".m2/repository"
+    MAVEN_OPTS: "-Dmaven.repo.local=${CI_PROJECT_DIR}/${MAVEN_REPO_PATH}"
+
+.cache-maven:
+  cache:
+    key: "maven-cache-$CI_COMMIT_REF_SLUG"
+    paths:
+      - "${MAVEN_REPO_PATH:-.m2/repository}"
+    policy: pull-push
+
+.cache-maven-read:
+  cache:
+    key: "maven-cache-$CI_COMMIT_REF_SLUG"
+    paths:
+      - "${MAVEN_REPO_PATH:-.m2/repository}"
+    policy: pull
+
+.cache-maven-with-fallback:
+  cache:
+    key: "maven-cache-$CI_COMMIT_REF_SLUG"
+    paths:
+      - ".m2/repository"
+    policy: pull-push
+    fallback_keys:
+      - "maven-cache-$CI_DEFAULT_BRANCH"
+      - "maven-cache"

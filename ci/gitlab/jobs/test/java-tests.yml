@@ -1,0 +1,210 @@
+# Java test job templates
+# Runs unit tests, integration tests, and javadoc generation
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file: 'ci/gitlab/jobs/test/java-tests.yml'
+
+.test-java-unit:
+  image: "${JAVA_MAVEN_IMAGE}"
+  stage: Test
+  variables:
+    JAVA_TOOL_OPTIONS: "-Djavax.net.ssl.trustStorePassword=changeit -XX:MaxRAM=3G"
+    MAVEN_REPO_PATH: ".m2/repository"
+    MAVEN_OPTS: "-Dmaven.repo.local=${CI_PROJECT_DIR}/${MAVEN_REPO_PATH}"
+  cache:
+    key: "maven-cache-$CI_COMMIT_REF_SLUG"
+    paths:
+      - "${MAVEN_REPO_PATH}"
+    policy: pull-push
+  before_script:
+    - 'test -n "${JAVA_MAVEN_IMAGE}" || (echo "JAVA_MAVEN_IMAGE must be set in project .gitlab-ci.yml variables" && exit 1)'
+    - java -version
+    - mvn -version
+  script:
+    - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
+    - mvn -ntp -DskipITs --fail-at-end clean install -q
+  artifacts:
+    paths:
+      - "**/target/surefire-reports/*"
+      - "**/target/site/jacoco/jacoco.xml"
+    name: "${CI_PROJECT_NAME}-${CI_BUILD_REF_NAME#*v}-*"
+    expire_in: "10 days"
+
+.test-java-integration:
+  image: "${JAVA_MAVEN_IMAGE}"
+  stage: Test
+  services:
+    - name: docker:27.3.1-dind
+      alias: docker
+      command: ["--host=tcp://0.0.0.0:2375", "--tls=false"]
+  variables:
+    JAVA_TOOL_OPTIONS: "-Djavax.net.ssl.trustStorePassword=changeit -XX:MaxRAM=3G"
+    MAVEN_REPO_PATH: ".m2/repository"
+    MAVEN_OPTS: "-Dmaven.repo.local=${CI_PROJECT_DIR}/${MAVEN_REPO_PATH}"
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_API_VERSION: "1.44"
+    TESTCONTAINERS_RYUK_DISABLED: "true"
+  cache:
+    key: "maven-cache-$CI_COMMIT_REF_SLUG"
+    paths:
+      - "${MAVEN_REPO_PATH}"
+    policy: pull-push
+  before_script:
+    - 'test -n "${JAVA_MAVEN_IMAGE}" || (echo "JAVA_MAVEN_IMAGE must be set in project .gitlab-ci.yml variables" && exit 1)'
+    - java -version
+    - mvn -version
+  script:
+    - docker --host "$DOCKER_HOST" version || true
+    - mvn -ntp failsafe:integration-test failsafe:verify
+  artifacts:
+    paths:
+      - "**/target/site/jacoco/jacoco.xml"
+      - "**/target/failsafe-reports/*"
+    expire_in: "1 day"
+
+.test-java-integration-maven:
+  image: "${JAVA_MAVEN_IMAGE}"
+  stage: Test
+  services:
+    - name: docker:27.3.1-dind
+      alias: docker
+      command: ["--host=tcp://0.0.0.0:2375", "--tls=false"]
+  variables:
+    JAVA_TOOL_OPTIONS: "-Djavax.net.ssl.trustStorePassword=changeit -XX:MaxRAM=3G"
+    MAVEN_REPO_PATH: ".m2/repository"
+    MAVEN_OPTS: "-Dmaven.repo.local=${CI_PROJECT_DIR}/${MAVEN_REPO_PATH}"
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    TESTCONTAINERS_RYUK_DISABLED: "true"
+  before_script:
+    - 'test -n "${JAVA_MAVEN_IMAGE}" || (echo "JAVA_MAVEN_IMAGE must be set in project .gitlab-ci.yml variables" && exit 1)'
+    - java -version
+    - mvn -version
+  script:
+    - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
+    - mvn -ntp clean test-compile failsafe:integration-test failsafe:verify --fail-at-end --errors
+  artifacts:
+    paths:
+      - "**/target/failsafe-reports/*"
+      - "**/target/site/jacoco/jacoco.xml"
+    name: "${CI_PROJECT_NAME}-${CI_BUILD_REF_NAME#*v}-*"
+    expire_in: "10 days"
+
+.test-javadoc:
+  image: "${JAVA_MAVEN_IMAGE}"
+  stage: Test
+  variables:
+    JAVA_TOOL_OPTIONS: "-Djavax.net.ssl.trustStorePassword=changeit -XX:MaxRAM=3G"
+    MAVEN_REPO_PATH: ".m2/repository"
+    MAVEN_OPTS: "-Dmaven.repo.local=${CI_PROJECT_DIR}/${MAVEN_REPO_PATH}"
+  cache:
+    key: "maven-cache-$CI_COMMIT_REF_SLUG"
+    paths:
+      - "${MAVEN_REPO_PATH}"
+    policy: pull-push
+  before_script:
+    - 'test -n "${JAVA_MAVEN_IMAGE}" || (echo "JAVA_MAVEN_IMAGE must be set in project .gitlab-ci.yml variables" && exit 1)'
+    - java -version
+    - mvn -version
+  script:
+    - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
+    - mvn -ntp -Dmaven.test.skip=true -Pjavadoc verify javadoc:javadoc
+  artifacts:
+    paths:
+      - "**/target/site/*"
+    name: "${CI_PROJECT_NAME}-${CI_BUILD_REF_NAME#*v}-javadoc"
+    expire_in: "10 days"
+
+# Javadoc variant that passes Maven settings — for projects requiring
+# authenticated/custom Maven repositories during the javadoc build.
+#
+# Usage:
+#   Test (Javadoc):
+#     extends: .test-javadoc-with-settings
+#     except: [schedules]
+#
+# Variables:
+#   MAVEN_SETTINGS_PATH - Path to Maven settings file. Default: scripts/mvn-release-settings.xml
+.test-javadoc-with-settings:
+  extends: .test-javadoc
+  variables:
+    MAVEN_SETTINGS_PATH: "scripts/mvn-release-settings.xml"
+  script:
+    - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
+    - mvn -ntp --settings ${MAVEN_SETTINGS_PATH} -Dmaven.test.skip=true -Pjavadoc verify javadoc:javadoc
+
+# Legacy javadoc variant using 'package' goal instead of 'verify'.
+# Use for projects that cannot enable the javadoc Maven profile.
+#
+# Usage:
+#   Test (Javadoc):
+#     extends: .test-javadoc-package
+#     except: [schedules]
+.test-javadoc-package:
+  extends: .test-javadoc
+  script:
+    - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
+    - mvn -Dmaven.test.skip=true package javadoc:javadoc
+
+# Unit test variant for projects using a custom Maven settings file.
+#
+# Usage:
+#   Test (Unit Tests):
+#     extends: .test-java-unit-settings
+#     except: [schedules]
+#
+# Variables:
+#   MAVEN_SETTINGS_PATH - Path to settings file. Default: scripts/mvn-release-settings.xml
+.test-java-unit-settings:
+  extends: .test-java-unit
+  variables:
+    MAVEN_SETTINGS_PATH: "scripts/mvn-release-settings.xml"
+  script:
+    - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
+    - mvn -ntp --settings ${MAVEN_SETTINGS_PATH} -DskipITs --fail-at-end clean install
+
+# Failsafe (integration-test) variant without Docker, for projects that run
+# Maven failsafe via a private registry settings file rather than testcontainers.
+#
+# Usage:
+#   Test (IT):
+#     extends: .test-java-failsafe-settings
+#     except: [schedules]
+#
+# Variables:
+#   MAVEN_SETTINGS_PATH - Path to settings file. Default: scripts/mvn-release-settings.xml
+.test-java-failsafe-settings:
+  extends: .test-java-unit
+  variables:
+    MAVEN_SETTINGS_PATH: "scripts/mvn-release-settings.xml"
+  script:
+    - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
+    - mvn -ntp --settings ${MAVEN_SETTINGS_PATH} failsafe:integration-test failsafe:verify
+  artifacts:
+    paths:
+      - "**/target/site/jacoco/jacoco.xml"
+      - "**/target/failsafe-reports/*"
+    name: "${CI_PROJECT_NAME}-${CI_BUILD_REF_NAME#*v}-*"
+    expire_in: "10 days"
+
+# Javadoc variant using the 'package' goal with a Maven settings file.
+# For projects that cannot use the 'verify' goal or the javadoc Maven profile
+# but still need private registry auth during the javadoc build.
+#
+# Usage:
+#   Test (Javadoc):
+#     extends: .test-javadoc-package-settings
+#     except: [schedules]
+#
+# Variables:
+#   MAVEN_SETTINGS_PATH - Path to settings file. Default: scripts/mvn-release-settings.xml
+.test-javadoc-package-settings:
+  extends: .test-javadoc
+  variables:
+    MAVEN_SETTINGS_PATH: "scripts/mvn-release-settings.xml"
+  script:
+    - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
+    - mvn -ntp --settings ${MAVEN_SETTINGS_PATH} -Dmaven.test.skip=true package javadoc:javadoc

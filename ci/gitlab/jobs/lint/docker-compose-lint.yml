@@ -1,0 +1,57 @@
+# yamllint disable rule:line-length
+# yaml-language-server: $schema=https://gitlab.com/gitlab-org/gitlab/-/raw/master/app/assets/javascripts/editor/schema/ci.json
+# yamllint enable rule:line-length
+---
+# Docker Compose linting
+# Validates Docker Compose files for syntax
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file: 'ci/gitlab/jobs/lint/docker-compose-lint.yml'
+#
+#   Lint Docker Compose:
+#     extends: .lint-docker-compose
+
+.lint-docker-compose:
+  image: "${JAVA_MAVEN_IMAGE}"
+  stage: Lint
+  script:
+    - apt update && apt install -yq yamllint curl
+    - echo "Installing Docker Compose (v2)"
+    - |
+      compose_url="https://github.com/docker/compose/releases/latest/download/"
+      compose_url="${compose_url}docker-compose-$(uname -s)-$(uname -m)"
+      curl -L "$compose_url" -o /usr/local/bin/docker-compose
+    - chmod +x /usr/local/bin/docker-compose
+    - echo "Verify Docker Compose version"
+    - |
+      docker-compose --version
+    - echo "Run Docker Compose lint"
+    - docker-compose -f docker-compose.yml config -q
+
+.lint-docker-compose-multi:
+  image: "${JAVA_MAVEN_IMAGE}"
+  stage: Lint
+  script:
+    - |
+      apt update && \
+      apt install -yq \
+        yamllint \
+        docker-compose \
+        make \
+        python3-pip \
+        python3-setuptools
+    - echo "Run Docker compose lint"
+    - |
+      for compose_file in $(find . \
+        -name "docker-compose*.yml" \
+        -not -path "*/target/*" 2>/dev/null); do
+        if [ ! -s "$compose_file" ] || \
+          ! grep -q '[^[:space:]]' "$compose_file"; then
+          echo "Skipping empty/whitespace-only file: $compose_file"
+          continue
+        fi
+        echo "Linting $compose_file"
+        docker-compose -f "$compose_file" config -q || exit 1
+      done

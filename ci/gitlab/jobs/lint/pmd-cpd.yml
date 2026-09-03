@@ -1,0 +1,101 @@
+# PMD/CPD static analysis
+# Runs PMD and Copy-Paste Detector for Java code
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file: 'ci/gitlab/jobs/lint/pmd-cpd.yml'
+#
+#   Lint PMD/CPD:
+#     extends: .lint-pmd-cpd
+
+.lint-pmd-cpd:
+  image: "${JAVA_MAVEN_IMAGE}"
+  stage: Lint
+  before_script: []
+  script:
+    - apt update && apt install make -yq
+    - echo "Test java code for PMD and CPD"
+    - mvn -ntp -Dmaven.test.skip=true package pmd:check pmd:cpd-check
+  cache: {}
+  artifacts:
+    paths:
+      - "qa/pmd/pmd-ruleset.xml"
+      - "**/**/*/pmd.html"
+      - "**/*/pmd.xml"
+    name: "${CI_PROJECT_NAME}-${CI_BUILD_REF_NAME#*v}-pmd"
+    expire_in: "10 days"
+
+.lint-pmd-cpd-with-settings:
+  image: "${JAVA_MAVEN_IMAGE}"
+  stage: Lint
+  before_script: []
+  script:
+    - apt update && apt install make -yq
+    - echo "Test java code for PMD and CPD"
+    - mvn -ntp --settings scripts/mvn-release-settings.xml -Dmaven.test.skip=true package pmd:check pmd:cpd-check
+  cache: {}
+  artifacts:
+    paths:
+      - "qa/pmd/pmd-ruleset.xml"
+      - "**/**/*/pmd.html"
+      - "**/*/pmd.xml"
+    name: "${CI_PROJECT_NAME}-${CI_BUILD_REF_NAME#*v}-pmd"
+    expire_in: "10 days"
+
+# Makefile-based PMD lint variant.
+# For projects where PMD is invoked through a Makefile target rather than Maven directly.
+#
+# Usage:
+#   Lint (PMD CPD):
+#     extends: .lint-pmd-cpd-make
+#     variables:
+#       PMD_MAKE_TARGET: "lint-pmd-cpd-report"  # override if needed
+#
+# Variables:
+#   PMD_MAKE_TARGET - The make target to invoke. Default: lint-pmd-cpd-report
+.lint-pmd-cpd-make:
+  image: "${JAVA_MAVEN_IMAGE}"
+  stage: Lint
+  before_script: []
+  variables:
+    PMD_MAKE_TARGET: "lint-pmd-cpd-report"
+  script:
+    - apt update && apt install make -yq
+    - make ${PMD_MAKE_TARGET}
+  cache: {}
+  artifacts:
+    paths:
+      - "qa/pmd/pmd-ruleset.xml"
+      - "**/**/*/pmd.html"
+      - "**/*/pmd.xml"
+    name: "${CI_PROJECT_NAME}-${CI_BUILD_REF_NAME#*v}-pmd"
+    expire_in: "10 days"
+
+# ── PMD-only variants (CPD excluded) ─────────────────────────────────────────
+# Use for projects where pmd:cpd-check was deliberately disabled because of
+# known code duplications. CPD can be re-enabled once duplications are resolved.
+
+.lint-pmd-only:
+  image: "${JAVA_MAVEN_IMAGE}"
+  stage: Lint
+  before_script: []
+  script:
+    - apt update && apt install make -yq
+    - echo "Test java code for PMD (CPD excluded by design)"
+    - mvn -ntp -Dmaven.test.skip=true package pmd:check
+  cache: {}
+  artifacts:
+    paths:
+      - "qa/pmd/pmd-ruleset.xml"
+      - "**/**/*/pmd.html"
+      - "**/*/pmd.xml"
+    name: "${CI_PROJECT_NAME}-${CI_BUILD_REF_NAME#*v}-pmd"
+    expire_in: "10 days"
+
+.lint-pmd-only-with-settings:
+  extends: .lint-pmd-only
+  script:
+    - apt update && apt install make -yq
+    - echo "Test java code for PMD only (CPD excluded by design)"
+    - mvn -ntp --settings scripts/mvn-release-settings.xml -Dmaven.test.skip=true package pmd:check

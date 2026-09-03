@@ -1,0 +1,183 @@
+# OWASP Dependency Check job template
+# Performs vulnerability scanning using OWASP Dependency Check
+#
+# Only fails the pipeline on HIGH/CRITICAL (CVSS >= 7.0).
+# Reports still contain all severities for audit purposes.
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file: 'ci/gitlab/jobs/security/owasp-dependency-check.yml'
+#
+#   OWASP Dependency Check:
+#     extends: .owasp-dependency-check
+#     variables:
+#       NVD_API_KEY: $NVD_API_KEY
+#
+# For scheduled scans, also include:
+#       file: 'ci/gitlab/jobs/security/owasp-dependency-check-scheduled.yml'
+
+# Strict (allow_failure: false) variants are in the sub-file included below.
+include:
+  - project: 'adorsys/xs2a/gitlab-ci-templates'
+    file: 'ci/gitlab/jobs/security/owasp-dependency-check-strict.yml'
+
+.owasp-dependency-check:
+  image: "${JAVA_MAVEN_IMAGE}"
+  stage: "Security"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - when: on_success
+  variables:
+    JAVA_TOOL_OPTIONS: "-XX:+UnlockExperimentalVMOptions -Xmx2048m"
+    MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+  before_script:
+    - 'test -n "${JAVA_MAVEN_IMAGE}" || (echo "JAVA_MAVEN_IMAGE must be set in project .gitlab-ci.yml variables" && exit 1)'
+    - apt-get update && apt-get install -yq git
+    - java -version
+    - mvn -version
+  script:
+    - |
+      set +e
+      mvn -B -ntp -DnvdApiKey=$NVD_API_KEY -DfailBuildOnCVSS=7 \
+        -DnvdMaxRetryCount=3 \
+        -DdataDirectory=dependency-check-data \
+        org.owasp:dependency-check-maven:aggregate 2>&1 | tee /tmp/owasp-run-$$.log
+      OWASP_EXIT=${PIPESTATUS[0]}
+      set -e
+      if [ "$OWASP_EXIT" -ne 0 ] && grep -qE "NVD Returned Status Code: [^23]|Connection (timed out|refused)|SocketTimeoutException|UnknownHostException|NvdApiException|Failed to update the NVD|Error updating the NVD" /tmp/owasp-run-$$.log; then
+        echo "ERROR: NVD API unavailable after retries. Error details:"
+        grep -E "NVD Returned Status Code|Connection (timed out|refused)|SocketTimeoutException|UnknownHostException|NvdApiException|Failed to update the NVD|Error updating the NVD" /tmp/owasp-run-$$.log | tail -5 || true
+        if [ -d "dependency-check-data" ] && [ "$(ls -A dependency-check-data 2>/dev/null)" ]; then
+          echo "INFO: Cache found. Falling back to cached NVD data (-DautoUpdate=false)..."
+          mvn -B -ntp -DnvdApiKey=$NVD_API_KEY -DfailBuildOnCVSS=7 \
+            -DautoUpdate=false \
+            -DdataDirectory=dependency-check-data \
+            org.owasp:dependency-check-maven:aggregate
+        else
+          echo "INFO: No NVD cache available. Running scan without NVD update (scan may be less accurate but will complete)."
+          mvn -B -ntp -DfailBuildOnCVSS=7 \
+            -DautoUpdate=false \
+            -DdataDirectory=dependency-check-data \
+            org.owasp:dependency-check-maven:aggregate
+        fi
+      elif [ "$OWASP_EXIT" -ne 0 ]; then
+        exit "$OWASP_EXIT"
+      fi
+  timeout: 4h
+  allow_failure: true
+  artifacts:
+    when: always
+    paths:
+      - target/dependency-check-report.html
+      - target/dependency-check-report.json
+    expire_in: "10 days"
+  cache:
+    - key: "maven-cache-$CI_COMMIT_REF_SLUG"
+      paths:
+        - "${MAVEN_REPO_PATH:-.m2/repository}"
+      policy: pull-push
+    - key: dependency-check
+      paths:
+        - dependency-check-data
+      policy: pull-push
+      when: always
+
+.owasp-dependency-check-maven-settings:
+  image: "${JAVA_MAVEN_IMAGE}"
+  stage: Security
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - when: on_success
+  variables:
+    JAVA_TOOL_OPTIONS: "-XX:+UnlockExperimentalVMOptions -Xmx2048m"
+    MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+  before_script:
+    - 'test -n "${JAVA_MAVEN_IMAGE}" || (echo "JAVA_MAVEN_IMAGE must be set in project .gitlab-ci.yml variables" && exit 1)'
+    - apt-get update && apt-get install -yq git
+    - java -version
+    - mvn -version
+  script:
+    - |
+      set +e
+      mvn -B -ntp --settings scripts/mvn-release-settings.xml \
+        -DnvdApiKey=$NVD_API_KEY -DfailBuildOnCVSS=7 \
+        -DnvdMaxRetryCount=3 \
+        -DdataDirectory=dependency-check-data \
+        org.owasp:dependency-check-maven:aggregate 2>&1 | tee /tmp/owasp-run-$$.log
+      OWASP_EXIT=${PIPESTATUS[0]}
+      set -e
+      if [ "$OWASP_EXIT" -ne 0 ] && grep -qE "NVD Returned Status Code: [^23]|Connection (timed out|refused)|SocketTimeoutException|UnknownHostException|NvdApiException|Failed to update the NVD|Error updating the NVD" /tmp/owasp-run-$$.log; then
+        echo "ERROR: NVD API unavailable after retries. Error details:"
+        grep -E "NVD Returned Status Code|Connection (timed out|refused)|SocketTimeoutException|UnknownHostException|NvdApiException|Failed to update the NVD|Error updating the NVD" /tmp/owasp-run-$$.log | tail -5 || true
+        if [ -d "dependency-check-data" ] && [ "$(ls -A dependency-check-data 2>/dev/null)" ]; then
+          echo "INFO: Cache found. Falling back to cached NVD data (-DautoUpdate=false)..."
+          mvn -B -ntp --settings scripts/mvn-release-settings.xml \
+            -DnvdApiKey=$NVD_API_KEY -DfailBuildOnCVSS=7 \
+            -DautoUpdate=false \
+            -DdataDirectory=dependency-check-data \
+            org.owasp:dependency-check-maven:aggregate
+        else
+          echo "INFO: No NVD cache available. Running scan without NVD update (scan may be less accurate but will complete)."
+          mvn -B -ntp --settings scripts/mvn-release-settings.xml \
+            -DfailBuildOnCVSS=7 \
+            -DautoUpdate=false \
+            -DdataDirectory=dependency-check-data \
+            org.owasp:dependency-check-maven:aggregate
+        fi
+      elif [ "$OWASP_EXIT" -ne 0 ]; then
+        exit "$OWASP_EXIT"
+      fi
+  timeout: 4h
+  allow_failure: true
+  artifacts:
+    when: always
+    paths:
+      - target/dependency-check-report.html
+      - target/dependency-check-report.json
+    expire_in: "10 days"
+  cache:
+    - key: "maven-cache-$CI_COMMIT_REF_SLUG"
+      paths:
+        - "${MAVEN_REPO_PATH:-.m2/repository}"
+      policy: pull-push
+    - key: dependency-check
+      paths:
+        - dependency-check-data
+      policy: pull-push
+      when: always
+# ── Feature-branch-only rules (reusable via !reference) ──────────────────────
+# Use this to restrict any security job to non-protected, non-MR branches so
+# it runs only on plain feature-branch pushes, yielding a soft-fail result.
+# Requires that develop, master, and release-* are configured as Protected
+# Branches in GitLab (Settings → Repository → Protected Branches).
+#
+# Usage in a project .gitlab-ci.yml:
+#   My Security Job:
+#     extends: .some-security-template
+#     rules: !reference [.feature-branch-security-only, rules]
+#
+.feature-branch-security-only:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+    - if: '$CI_COMMIT_REF_PROTECTED == "true"'
+      when: never
+    - when: on_success
+
+# ── On-push security rules with rollback guard (reusable via !reference) ─────
+# Use this for soft-fail security jobs that should run on normal non-protected
+# push/MR pipelines, but must be skipped for schedules and rollback runs.
+.on-push-security-with-rollback-guard:
+  rules:
+    - if: '$MAVEN_RELEASE_ROLLBACK == "true"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - if: '$CI_COMMIT_REF_PROTECTED == "true"'
+      when: never
+    - when: on_success
