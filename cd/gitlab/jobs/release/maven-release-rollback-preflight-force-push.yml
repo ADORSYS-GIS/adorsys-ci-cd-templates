@@ -1,0 +1,245 @@
+.maven-release-rollback-preflight-force-push:
+  script:
+    - |
+      # Preflight: ensure GITLAB_TOKEN can reach the API (git push uses the token embedded in the remote URL;
+      # dry-run push is not used because GitLab rejects it on protected branches).
+      if [ "$ROLLBACK_REVERT_COMMITS" = "true" ]; then
+        if [ -z "${GITLAB_TOKEN:-}" ]; then
+          echo "ERROR: GITLAB_TOKEN is not set; cannot push rollback commits."
+          exit 1
+        fi
+        HTTP_STATUS=$(curl --silent --output /dev/null --write-out "%{http_code}" \
+          --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}")
+        if [ "$HTTP_STATUS" != "200" ]; then
+          echo "ERROR: GITLAB_TOKEN cannot access project API (HTTP ${HTTP_STATUS}). Check token validity and permissions."
+          exit 1
+        fi
+      fi
+
+      # Preflight: if release tag exists remotely, ensure we can delete it.
+      if [ "$REMOTE_TAG_EXISTS" = "true" ]; then
+        if ! git push --dry-run origin ":refs/tags/${RELEASE_VERSION}" >/dev/null 2>&1; then
+          echo "ERROR: CI token cannot delete remote tag ${RELEASE_VERSION}."
+          echo "Grant tag delete permission (or maintainers can remove it manually), then re-run rollback."
+          exit 1
+        fi
+      fi
+
+      # Branches may be protected; deletion is always done via the GitLab API with GITLAB_TOKEN.
+      check_branch_delete_permission() {
+        if [ -z "${GITLAB_TOKEN:-}" ]; then
+          echo "ERROR: GITLAB_TOKEN is not set; cannot delete branches via API."
+          exit 1
+        fi
+      }
+
+      if [ "${RELEASE_MODE}" = "${DEVELOP_MODE}" ]; then
+        check_branch_delete_permission "${RELEASE_BRANCH}"
+      else
+        check_branch_delete_permission "${MASTER_BRANCH}"
+        check_branch_delete_permission "${RELEASE_BRANCH}"
+        if [ "${SNAPSHOT_TARGET_BRANCH:-${TARGET_BRANCH}}" != "${TARGET_BRANCH}" ]; then
+          check_branch_delete_permission "${SNAPSHOT_TARGET_BRANCH}"
+        fi
+      fi
+
+      TAG_DELETE_STATUS="skipped"
+      COMMIT_REVERT_STATUS="skipped"
+      CONTAINER_TAG_DELETE_COUNT=0
+      RELEASE_PACKAGE_DELETE_COUNT=0
+      SNAPSHOT_PACKAGE_DELETE_COUNT=0
+      MASTER_BRANCH_PUSH_STATUS="skipped"
+      MASTER_BRANCH_DELETE_STATUS="skipped"
+      RELEASE_BRANCH_DELETE_STATUS="skipped"
+      SNAPSHOT_BRANCH_DELETE_STATUS="not-applicable"
+      TARGET_BRANCH_PUSH_STATUS="skipped"
+
+      # Remove release tag
+      git tag -d "${RELEASE_VERSION}" || true
+      if [ "$REMOTE_TAG_EXISTS" = "true" ]; then
+        git push origin ":refs/tags/${RELEASE_VERSION}"
+        TAG_DELETE_STATUS="deleted"
+        log_done "Deleted remote tag ${RELEASE_VERSION}"
+      else
+        TAG_DELETE_STATUS="not-found"
+        log_skip "Remote tag ${RELEASE_VERSION} not found"
+      fi
+
+      # Remove the pre-release anchor tag now that rollback has consumed it.
+      git tag -d "${ANCHOR_TAG}" 2>/dev/null || true
+      git push origin ":refs/tags/${ANCHOR_TAG}" 2>/dev/null || true
+      log_done "Deleted pre-release anchor tag ${ANCHOR_TAG}"
+      verify_remote_tag_absent "${RELEASE_VERSION}"
+      verify_remote_tag_absent "${ANCHOR_TAG}"
+
+      commit_is_ancestor_of_remote_branch() {
+        _ANCESTOR_COMMIT="$1"
+        _ANCESTOR_BRANCH="$2"
+        git merge-base --is-ancestor "${_ANCESTOR_COMMIT}" "origin/${_ANCESTOR_BRANCH}" >/dev/null 2>&1
+      }
+
+      commit_already_reverted_on_remote_branch() {
+        _REVERTED_COMMIT="$1"
+        _REVERTED_BRANCH="$2"
+        git log "origin/${_REVERTED_BRANCH}" --grep="This reverts commit ${_REVERTED_COMMIT}" --format='%H' -n 1 | grep -q .
+      }
+
+      revert_commits_on_branch() {
+        _ROLLBACK_BRANCH="$1"
+        shift
+        _ROLLBACK_COMMITS="$*"
+        REVERT_CREATED=false
+
+        git fetch origin "${_ROLLBACK_BRANCH}"
+        git checkout -B "${_ROLLBACK_BRANCH}" "origin/${_ROLLBACK_BRANCH}"
+
+        for _ROLLBACK_COMMIT in ${_ROLLBACK_COMMITS}; do
+          if [ -z "${_ROLLBACK_COMMIT}" ]; then
+            continue
+          fi
+
+          if ! commit_is_ancestor_of_remote_branch "${_ROLLBACK_COMMIT}" "${_ROLLBACK_BRANCH}"; then
+            log_skip "Commit ${_ROLLBACK_COMMIT} is not on ${_ROLLBACK_BRANCH}; skipping revert"
+            continue
+          fi
+
+          if commit_already_reverted_on_remote_branch "${_ROLLBACK_COMMIT}" "${_ROLLBACK_BRANCH}"; then
+            log_skip "Commit ${_ROLLBACK_COMMIT} is already reverted on ${_ROLLBACK_BRANCH}; skipping"
+            continue
+          fi
+
+          if git revert --no-edit "${_ROLLBACK_COMMIT}"; then
+            REVERT_CREATED=true
+            log_done "Reverted commit ${_ROLLBACK_COMMIT} on ${_ROLLBACK_BRANCH}"
+          else
+            if git diff --quiet && git diff --cached --quiet; then
+              git revert --abort || true
+              log_skip "Commit ${_ROLLBACK_COMMIT} has no changes to revert on ${_ROLLBACK_BRANCH}"
+            else
+              git revert --abort || true
+              echo "ERROR: Failed to revert commit ${_ROLLBACK_COMMIT} on ${_ROLLBACK_BRANCH}. Resolve conflicts manually."
+              exit 1
+            fi
+          fi
+        done
+
+        if [ "${REVERT_CREATED}" = "true" ]; then
+          _ROLLBACK_HEAD_COMMIT=$(git rev-parse HEAD)
+          # ci.skip: rollback commit only undoes release metadata/version bumps
+          if git push -o ci.skip origin "HEAD:refs/heads/${_ROLLBACK_BRANCH}"; then
+            log_done "Pushed rollback revert commit(s) to ${_ROLLBACK_BRANCH}"
+            verify_remote_branch_commit "${_ROLLBACK_BRANCH}" "${_ROLLBACK_HEAD_COMMIT}"
+          else
+            echo "ERROR: Failed to push rollback commits to ${_ROLLBACK_BRANCH}."
+            exit 1
+          fi
+        else
+          log_skip "No rollback revert commit created on ${_ROLLBACK_BRANCH}"
+        fi
+      }
+
+      # Previous released version: the release version with its last numeric component decremented
+      # (e.g. 14.2 -> 14.1, 14.1 -> 14.0). master mirrors the latest release, so this is where it belongs.
+      prev_release_version() {
+        _rv="$1"; _last="${_rv##*.}"; _pre="${_rv%.*}"
+        case "${_last}" in ''|*[!0-9]*) return 1;; esac
+        if [ "$((_last))" -le 0 ]; then return 1; fi
+        if [ "${_pre}" = "${_rv}" ]; then
+          printf '%s' "$((_rv - 1))"
+        else
+          printf '%s.%s' "${_pre}" "$((_last - 1))"
+        fi
+      }
+
+      # Roll back the long-lived master branch to the PREVIOUS release version. The release set it to
+      # RELEASE_VERSION (14.2); master must return to the previous release (14.1), never a -SNAPSHOT.
+      # Also repairs a master a prior rollback wrongly left on RELEASE_VERSION-SNAPSHOT. Non-fatal.
+      revert_master_release() {
+        _M_BRANCH="$1"
+        MASTER_REVERT_RESULT="skipped"
+
+        _M_PREV_RELEASE=$(prev_release_version "${RELEASE_VERSION}" || true)
+        if [ -z "${_M_PREV_RELEASE}" ]; then
+          log_warn "Could not derive the previous release from ${RELEASE_VERSION}; leaving ${_M_BRANCH} for manual review."
+          MASTER_REVERT_RESULT="manual-required"
+          return 0
+        fi
+
+        git fetch origin "${_M_BRANCH}"
+        git checkout -B "${_M_BRANCH}" "origin/${_M_BRANCH}"
+
+        _M_SETTINGS_ARG=""
+        if [ -n "${MAVEN_SETTINGS_PATH:-}" ]; then _M_SETTINGS_ARG="--settings ${MAVEN_SETTINGS_PATH}"; fi
+        _M_CURRENT_VERSION=$(mvn -ntp --batch-mode ${_M_SETTINGS_ARG} help:evaluate -Dexpression=project.version -DforceStdout -q 2>/dev/null || true)
+
+        if [ "${_M_CURRENT_VERSION}" = "${_M_PREV_RELEASE}" ]; then
+          log_skip "${_M_BRANCH} is already at previous release ${_M_PREV_RELEASE}; nothing to roll back"
+          MASTER_REVERT_RESULT="up-to-date"
+          return 0
+        fi
+        # Only touch master when it carries this release, or a bad snapshot left by a prior rollback.
+        if [ "${_M_CURRENT_VERSION}" != "${RELEASE_VERSION}" ] && [ "${_M_CURRENT_VERSION}" != "${RELEASE_VERSION}-SNAPSHOT" ]; then
+          log_warn "${_M_BRANCH} is at ${_M_CURRENT_VERSION:-<unknown>}, not ${RELEASE_VERSION} or ${RELEASE_VERSION}-SNAPSHOT; leaving it for manual review."
+          MASTER_REVERT_RESULT="manual-required"
+          return 0
+        fi
+
+        mvn -ntp --batch-mode ${_M_SETTINGS_ARG} versions:set -DnewVersion="${_M_PREV_RELEASE}" \
+          -DgenerateBackupPoms=false -DprocessAllModules=true
+        git add -u
+        git commit -m "chore(release): roll back ${_M_BRANCH} to previous release ${_M_PREV_RELEASE}"
+        _M_HEAD_COMMIT=$(git rev-parse HEAD)
+        # ci.skip: rollback commit only restores the previous release version
+        if git push -o ci.skip origin "HEAD:refs/heads/${_M_BRANCH}"; then
+          log_done "Rolled back ${_M_BRANCH} to previous release ${_M_PREV_RELEASE}"
+          verify_remote_branch_commit "${_M_BRANCH}" "${_M_HEAD_COMMIT}"
+          MASTER_REVERT_RESULT="pushed"
+        else
+          echo "ERROR: Failed to push master rollback commit to ${_M_BRANCH}."
+          exit 1
+        fi
+      }
+
+      # Restore the long-lived master branch to the previous release (the release set it to the
+      # release version). Runs independently of the develop/snapshot commit reverts.
+      if [ "${MASTER_IS_LONG_LIVED}" = "true" ]; then
+        if git ls-remote --exit-code --heads origin "${MASTER_BRANCH}" >/dev/null 2>&1; then
+          revert_master_release "${MASTER_BRANCH}"
+          MASTER_BRANCH_PUSH_STATUS="${MASTER_REVERT_RESULT}"
+        else
+          MASTER_BRANCH_PUSH_STATUS="not-found"
+          log_skip "${MASTER_BRANCH} does not exist; skipping rollback on master branch"
+        fi
+      else
+        MASTER_BRANCH_PUSH_STATUS="not-required"
+      fi
+
+      # Create explicit rollback commits on the develop/snapshot branch so protected branches keep immutable history.
+      if [ "$ROLLBACK_REVERT_COMMITS" = "true" ]; then
+        ROLLBACK_PUSH_BRANCH="${SNAPSHOT_TARGET_BRANCH:-${TARGET_BRANCH}}"
+        ROLLBACK_REVERT_LIST=""
+        if [ -n "${SNAPSHOT_COMMIT:-}" ] && [ -n "${RELEASE_COMMIT:-}" ]; then
+          ROLLBACK_REVERT_LIST="${SNAPSHOT_COMMIT} ${RELEASE_COMMIT}"
+        elif [ -n "${RELEASE_COMMIT:-}" ] && [ "${MASTER_IS_LONG_LIVED}" = "true" ]; then
+          ROLLBACK_REVERT_LIST="${RELEASE_COMMIT}"
+        fi
+
+        if [ -z "${ROLLBACK_REVERT_LIST}" ]; then
+          COMMIT_REVERT_STATUS="not-required"
+          TARGET_BRANCH_PUSH_STATUS="not-required"
+          log_skip "No release commits were identified for rollback on ${ROLLBACK_PUSH_BRANCH}"
+        else
+          revert_commits_on_branch "${ROLLBACK_PUSH_BRANCH}" ${ROLLBACK_REVERT_LIST}
+          COMMIT_REVERT_STATUS="reverted"
+          if [ "${REVERT_CREATED}" = "true" ]; then
+            TARGET_BRANCH_PUSH_STATUS="pushed"
+          else
+            TARGET_BRANCH_PUSH_STATUS="up-to-date"
+          fi
+        fi
+      else
+        COMMIT_REVERT_STATUS="skipped"
+        TARGET_BRANCH_PUSH_STATUS="not-required"
+        log_skip "No release commits available to revert on ${TARGET_BRANCH}"
+      fi

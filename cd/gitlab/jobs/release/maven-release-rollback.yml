@@ -1,0 +1,41 @@
+# Maven Release rollback template
+# Included automatically by maven-release.yml — include that file instead.
+#
+# .maven-release-rollback-base — undoes a completed release: deletes the git tag,
+#   creates a revert commit, and removes artifacts from the container and package
+#   registries. Trigger via MAVEN_RELEASE_ROLLBACK=true. The script is composed
+#   from ordered fragments so the job remains self-contained.
+
+# Sub-files are fetched from the default branch of gitlab-ci-templates at include time.
+include:
+  - project: 'adorsys/xs2a/gitlab-ci-templates'
+    file: 'cd/gitlab/jobs/release/maven-release-rollback-init.yml'
+  - project: 'adorsys/xs2a/gitlab-ci-templates'
+    file: 'cd/gitlab/jobs/release/maven-release-rollback-helpers-detection.yml'
+  - project: 'adorsys/xs2a/gitlab-ci-templates'
+    file: 'cd/gitlab/jobs/release/maven-release-rollback-preflight-force-push.yml'
+  - project: 'adorsys/xs2a/gitlab-ci-templates'
+    file: 'cd/gitlab/jobs/release/maven-release-rollback-cleanup-summary.yml'
+
+.maven-release-rollback-base:
+  image: "${JAVA_MAVEN_IMAGE}"
+  stage: Release
+  needs: []
+  rules:
+    - if: '$MAVEN_RELEASE_ROLLBACK == "true" && $CI_PIPELINE_SOURCE != "schedule"'
+      when: manual
+    - when: never
+  variables:
+    GIT_STRATEGY: clone
+    GIT_DEPTH: "0"
+  before_script:
+    - 'test -n "${JAVA_MAVEN_IMAGE}" || (echo "JAVA_MAVEN_IMAGE must be set in project .gitlab-ci.yml variables" && exit 1)'
+    - apt-get update && apt-get install -yq git curl jq
+  script:
+    - git config user.email "${GITLAB_USER_EMAIL:-ci-release-bot@adorsys.de}"
+    - git config user.name "${GITLAB_USER_NAME:-ci-release-bot}"
+    - git remote set-url origin "https://oauth2:${GITLAB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+    - !reference [.maven-release-rollback-init, script]
+    - !reference [.maven-release-rollback-helpers-detection, script]
+    - !reference [.maven-release-rollback-preflight-force-push, script]
+    - !reference [.maven-release-rollback-cleanup-summary, script]

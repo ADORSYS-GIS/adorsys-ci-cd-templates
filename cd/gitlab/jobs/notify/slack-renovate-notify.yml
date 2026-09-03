@@ -1,0 +1,33 @@
+# Slack Notification Template — Renovate Bot Activity
+# Reports Renovate update status and the single grouped security MR to Slack.
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file: 'cd/gitlab/jobs/notify/slack-renovate-notify.yml'
+#
+#   Notify Slack (Renovate):
+#     extends: .slack_notify_renovate
+#     variables:
+#       RENOVATE_BRANCH_PREFIX: "bugFix/issue-0001-"
+
+.slack_notify_renovate:
+  stage: "Notify"
+  image: alpine:latest
+  allow_failure: true
+  variables:
+    RENOVATE_BRANCH_PREFIX: "renovate/"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && $SCHEDULE_TYPE == "renovate-update"'
+      when: always
+  before_script:
+    - apk add --no-cache curl jq bash
+  script:
+    - |
+      SCRIPT_URL="${CI_API_V4_URL}/projects/adorsys%2Fxs2a%2Fgitlab-ci-templates/repository/files/cd%2Fgitlab%2Fscripts%2Fnotify-renovate.sh/raw?ref=main"
+      curl -sL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${SCRIPT_URL}" -o /tmp/notify-renovate.sh || {
+        echo "ERROR: Failed to download notify-renovate.sh"
+        exit 1
+      }
+      chmod +x /tmp/notify-renovate.sh
+      /tmp/notify-renovate.sh

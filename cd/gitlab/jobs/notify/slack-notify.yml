@@ -1,0 +1,37 @@
+# Slack Notification Templates
+# Reusable job template for sending pipeline notifications to Slack.
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file: 'cd/gitlab/jobs/notify/slack-notify.yml'
+#
+#   Notify Slack on Failure:
+#     <<: *slack_notify
+
+.slack_notify: &slack_notify
+  stage: "Notify"
+  image: alpine:latest
+  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+      when: always
+  before_script:
+    - apk add --no-cache curl jq bash
+  script:
+    - |
+      SCRIPT_URL="${CI_API_V4_URL}/projects/adorsys%2Fxs2a%2Fgitlab-ci-templates/repository/files/cd%2Fgitlab%2Fscripts%2Fnotify-slack.sh/raw?ref=main"
+      curl -sL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${SCRIPT_URL}" -o /tmp/notify-slack.sh || {
+        echo "Falling back to inline script..."
+        cat > /tmp/notify-slack.sh <<'INLINE_EOF'
+      #!/usr/bin/env bash
+      # Fallback: minimal notification if script download fails
+      set -euo pipefail
+      if [ -z "${SLACK_WEBHOOK_URL:-}" ]; then echo "No SLACK_WEBHOOK_URL"; exit 0; fi
+      COLOR="danger"
+      PAYLOAD="{\"text\":\"Pipeline ${CI_PIPELINE_ID} failed for ${CI_PROJECT_PATH:-unknown} on ${CI_COMMIT_BRANCH:-unknown}\"}"
+      curl -s -X POST "${SLACK_WEBHOOK_URL}" -H 'Content-Type: application/json' -d "$PAYLOAD" >/dev/null || true
+      INLINE_EOF
+      }
+      chmod +x /tmp/notify-slack.sh
+      /tmp/notify-slack.sh

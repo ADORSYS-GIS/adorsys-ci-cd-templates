@@ -1,0 +1,244 @@
+# Maven release job templates
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file: 'cd/gitlab/jobs/release/maven-release.yml'
+#
+#   Release artifacts (develop):
+#     extends: .maven-release-snapshot
+#     variables:
+#       JAVA_MAVEN_IMAGE: "maven:3.9-eclipse-temurin-21"
+
+# Sub-files are fetched from the default branch of gitlab-ci-templates at include time.
+include:
+  - project: 'adorsys/xs2a/gitlab-ci-templates'
+    file: 'cd/gitlab/jobs/release/maven-release-plugin-scripts.yml'
+  - project: 'adorsys/xs2a/gitlab-ci-templates'
+    file: 'cd/gitlab/jobs/release/maven-release-rollback.yml'
+
+.maven-release-base:
+  image: "${JAVA_MAVEN_IMAGE}"
+  variables:
+    # logging.level.root silences Spring Boot / Liquibase in every forked JVM; simpleLogger silences Maven's own [INFO] lines
+    JAVA_TOOL_OPTIONS: "-Djavax.net.ssl.trustStorePassword=changeit -XX:MaxRAM=3G -Dlogging.level.root=ERROR"
+    MAVEN_REPO_PATH: ".m2/repository"
+    MAVEN_OPTS: "-Dmaven.repo.local=${CI_PROJECT_DIR}/${MAVEN_REPO_PATH} -Dorg.slf4j.simpleLogger.defaultLogLevel=error"
+  cache:
+    key: "maven-cache-$CI_COMMIT_REF_SLUG"
+    paths:
+      - "${MAVEN_REPO_PATH}"
+    policy: pull-push
+  before_script:
+    - 'test -n "${JAVA_MAVEN_IMAGE}" || (echo "JAVA_MAVEN_IMAGE must be set in project .gitlab-ci.yml variables" && exit 1)'
+    - java -version
+    - mvn -version
+  script:
+    - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
+    - mvn -ntp --settings ${MAVEN_SETTINGS_PATH} -P${MAVEN_DEPLOY_PROFILE} -DskipTests -U deploy
+
+.maven-release-snapshot:
+  extends: .maven-release-base
+  stage: Release
+  rules:
+    - if: '$MAVEN_RELEASE_ROLLBACK == "true"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH =~ $RELEASE_DEVELOP_BRANCH_REGEX && $CI_PIPELINE_SOURCE != "schedule"'
+      when: always
+    - when: never
+
+.maven-release-tags:
+  extends: .maven-release-base
+  stage: Release
+  rules:
+    - when: never  # release plugin job owns tag-based deploys
+
+.maven-release-snapshot-no-cache:
+  extends: .maven-release-base
+  stage: Release
+  rules:
+    - if: '$MAVEN_RELEASE_ROLLBACK == "true"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH =~ $RELEASE_DEVELOP_BRANCH_REGEX && $CI_PIPELINE_SOURCE != "schedule"'
+      when: always
+    - when: never
+  cache: {}
+
+.maven-release-tags-no-cache:
+  extends: .maven-release-base
+  stage: Release
+  rules:
+    - when: never  # release plugin job owns tag-based deploys
+  cache: {}
+
+# ── Prelease profile variants ─────────────────────────────────────────────────
+# Use for projects whose pom.xml defines <profile id="release">.
+# These are identical to the standard variants except the Maven profile flag.
+
+.maven-release-prelease-base:
+  extends: .maven-release-base
+  script:
+    - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
+    - mvn -ntp --settings ${MAVEN_SETTINGS_PATH} -P${MAVEN_PRELEASE_PROFILE} -DskipTests -U deploy
+
+.maven-release-snapshot-prelease:
+  extends: .maven-release-prelease-base
+  stage: Release
+  rules:
+    - if: '$MAVEN_RELEASE_ROLLBACK == "true"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH =~ $RELEASE_DEVELOP_BRANCH_REGEX && $CI_PIPELINE_SOURCE != "schedule"'
+      when: always
+    - when: never
+
+.maven-release-tags-prelease:
+  extends: .maven-release-prelease-base
+  stage: Release
+  rules:
+    - when: never  # release plugin job owns tag-based deploys
+
+.maven-release-plugin-common:
+  extends: .maven-release-base
+  stage: Release
+  variables:
+    GIT_STRATEGY: clone
+    GIT_DEPTH: "0"
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  before_script:
+    - 'test -n "${JAVA_MAVEN_IMAGE}" || (echo "JAVA_MAVEN_IMAGE must be set in project .gitlab-ci.yml" && exit 1)'
+    - apt-get update && apt-get install -yq docker.io git curl jq
+    - echo "RELEASE_JOB_EXECUTED=false" > release-context.env
+    - java -version
+    - mvn -version
+  after_script:
+    - |
+      if [ -z "${RELEASE_DEVELOP_MODE:-}" ]; then
+        echo "ERROR: RELEASE_DEVELOP_MODE must be set by project .gitlab-ci.yml."
+        exit 1
+      fi
+      DEVELOP_MODE="${RELEASE_DEVELOP_MODE}"
+      SUPPORT_MODE="${RELEASE_SUPPORT_MODE:-}"
+
+      if [ -n "${SUPPORT_MODE}" ] && [ "${RELEASE_MODE:-${DEVELOP_MODE}}" = "${SUPPORT_MODE}" ]; then
+        if [ -z "${RELEASE_SUPPORT_BRANCH_FORMAT:-}" ]; then
+          echo "ERROR: RELEASE_SUPPORT_BRANCH_FORMAT must be set by project .gitlab-ci.yml for support release mode."
+          exit 1
+        fi
+        SUPPORT_BRANCH_FORMAT="${RELEASE_SUPPORT_BRANCH_FORMAT}"
+        EFFECTIVE_RELEASE_VERSION="${SUP_RELEASE_VERSION:-${RELEASE_VERSION:-}}"
+        EFFECTIVE_RELEASE_BRANCH="${CI_COMMIT_BRANCH:-${CI_COMMIT_REF_NAME:-}}"
+      else
+        if [ -z "${RELEASE_DEVELOP_BRANCH:-}" ]; then
+          echo "ERROR: RELEASE_DEVELOP_BRANCH must be set by project .gitlab-ci.yml for develop release mode."
+          exit 1
+        fi
+        DEVELOP_BRANCH="${RELEASE_DEVELOP_BRANCH}"
+        EFFECTIVE_RELEASE_VERSION="${RELEASE_VERSION:-}"
+        EFFECTIVE_RELEASE_BRANCH="${CI_COMMIT_BRANCH:-${DEVELOP_BRANCH}}"
+      fi
+
+      if [ "$CI_JOB_STATUS" = "success" ]; then
+        RELEASE_NOTIFY_VERSION="${EFFECTIVE_RELEASE_VERSION:-}"
+        if [ -z "${RELEASE_NOTIFY_VERSION}" ]; then
+          RELEASE_NOTIFY_VERSION=$(git tag --points-at HEAD | head -1 || true)
+        fi
+        RELEASE_NOTIFY_BRANCH="${EFFECTIVE_RELEASE_BRANCH}"
+        {
+          echo "RELEASE_JOB_EXECUTED=true"
+          echo "RELEASE_NOTIFY_VERSION=${RELEASE_NOTIFY_VERSION}"
+          echo "RELEASE_NOTIFY_BRANCH=${RELEASE_NOTIFY_BRANCH}"
+        } > release-context.env
+      fi
+
+      if [ "$CI_JOB_STATUS" = "failed" ] && [ -n "$EFFECTIVE_RELEASE_VERSION" ]; then
+          curl --silent --output /dev/null --request DELETE \
+            --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/repository/tags/${EFFECTIVE_RELEASE_VERSION}" || true
+        fi
+
+.maven-release-plugin-base:
+  extends: .maven-release-plugin-common
+  rules:
+    - if: '$MAVEN_RELEASE_RUN == "true" && $MAVEN_RELEASE_ROLLBACK != "true" && $CI_PIPELINE_SOURCE != "schedule" && $CI_COMMIT_BRANCH =~ $RELEASE_DEVELOP_BRANCH_REGEX && $RELEASE_VERSION != "" && $SNAPSHOT_VERSION != ""'
+      when: on_success
+    - when: never
+  variables:
+    RELEASE_MODE: "${RELEASE_DEVELOP_MODE}"
+
+.maven-release-plugin-support-base:
+  extends: .maven-release-plugin-common
+  rules:
+    - if: '$MAVEN_RELEASE_RUN == "true" && $MAVEN_RELEASE_ROLLBACK != "true" && $CI_PIPELINE_SOURCE != "schedule" && $CI_COMMIT_BRANCH =~ $RELEASE_SUPPORT_BRANCH_REGEX && $SUP_RELEASE_VERSION != "" && $SUP_SNAPSHOT_VERSION != ""'
+      when: on_success
+    - when: never
+  variables:
+    RELEASE_MODE: "${RELEASE_SUPPORT_MODE}"
+
+.slack-release-success-notify:
+  stage: "Notify"
+  image: alpine:latest
+  allow_failure: true
+  rules:
+    - if: '$MAVEN_RELEASE_RUN == "true" && $MAVEN_RELEASE_ROLLBACK != "true" && $CI_PIPELINE_SOURCE != "schedule"'
+      when: on_success
+    - when: never
+  before_script:
+    - apk add --no-cache curl
+  script:
+    - |
+      if [ -z "${SLACK_WEBHOOK_URL:-}" ]; then
+        echo "SLACK_WEBHOOK_URL is not configured — skipping Slack notification."
+        exit 0
+      fi
+
+      if [ "${RELEASE_JOB_EXECUTED:-}" != "true" ]; then
+        echo "Release job was not executed in this pipeline — skipping success notification."
+        exit 0
+      fi
+
+      if [ -z "${RELEASE_DEVELOP_MODE:-}" ]; then
+        echo "ERROR: RELEASE_DEVELOP_MODE must be set by project .gitlab-ci.yml."
+        exit 1
+      fi
+      DEVELOP_MODE="${RELEASE_DEVELOP_MODE}"
+      SUPPORT_MODE="${RELEASE_SUPPORT_MODE:-}"
+
+      if [ -n "${SUPPORT_MODE}" ] && [ "${RELEASE_MODE:-${DEVELOP_MODE}}" = "${SUPPORT_MODE}" ]; then
+        if [ -z "${RELEASE_SUPPORT_BRANCH_FORMAT:-}" ]; then
+          echo "ERROR: RELEASE_SUPPORT_BRANCH_FORMAT must be set by project .gitlab-ci.yml for support release mode."
+          exit 1
+        fi
+        SUPPORT_BRANCH_FORMAT="${RELEASE_SUPPORT_BRANCH_FORMAT}"
+        DEFAULT_VERSION="${SUP_RELEASE_VERSION:-${RELEASE_VERSION:-unknown}}"
+        DEFAULT_BRANCH=$(printf "${SUPPORT_BRANCH_FORMAT}" "${SUP_RELEASE_VERSION%%.*}")
+      else
+        DEVELOP_BRANCH="${RELEASE_DEVELOP_BRANCH:-}"
+        if [ -z "${DEVELOP_BRANCH}" ]; then
+          echo "ERROR: RELEASE_DEVELOP_BRANCH must be set by project .gitlab-ci.yml for develop release mode."
+          exit 1
+        fi
+        DEFAULT_VERSION="${RELEASE_VERSION:-unknown}"
+        DEFAULT_BRANCH="${DEVELOP_BRANCH}"
+      fi
+      VERSION="${RELEASE_NOTIFY_VERSION:-${DEFAULT_VERSION}}"
+      BRANCH="${RELEASE_NOTIFY_BRANCH:-${DEFAULT_BRANCH}}"
+      PAYLOAD=$(printf '{
+        "text": ":white_check_mark: Release succeeded",
+        "attachments": [{
+          "color": "good",
+          "fields": [
+            {"title": "Project", "value": "%s", "short": true},
+            {"title": "Version", "value": "%s", "short": true},
+            {"title": "Branch", "value": "%s", "short": true},
+            {"title": "Pipeline", "value": "%s", "short": false}
+          ]
+        }]
+      }' \
+      "${CI_PROJECT_NAME}" "${VERSION}" "${BRANCH}" "${CI_PIPELINE_URL}")
+
+      curl -s -X POST "${SLACK_WEBHOOK_URL}" \
+        -H 'Content-type: application/json' \
+        --data "${PAYLOAD}" >/dev/null \
+        && echo "Slack notification sent." \
+        || echo "WARNING: Slack notification failed (non-fatal)."
