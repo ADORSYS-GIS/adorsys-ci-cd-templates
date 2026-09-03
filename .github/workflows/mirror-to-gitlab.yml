@@ -1,0 +1,40 @@
+name: Mirror to GitLab
+
+# GitHub is the source of truth for this repo. This workflow pushes main and
+# all tags to the GitLab project as a read-only mirror. Never push directly
+# to the GitLab remote - it will be overwritten/pruned on the next run.
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "**"
+  workflow_dispatch: {}
+
+concurrency:
+  group: mirror-to-gitlab
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch main and tags from GitHub
+        run: |
+          git fetch origin '+refs/heads/main:refs/heads/main'
+          git fetch origin '+refs/tags/*:refs/tags/*' --prune
+
+      - name: Push mirror to GitLab
+        env:
+          GITLAB_TOKEN: ${{ secrets.XS2A_GITLAB_SYNC_TOKEN }}
+        run: |
+          git remote add gitlab "https://oauth2:${GITLAB_TOKEN}@git.adorsys.de/adorsys/xs2a/gitlab-ci-templates.git"
+          git push gitlab '+refs/heads/main:refs/heads/main'
+          git push --prune gitlab '+refs/tags/*:refs/tags/*'
