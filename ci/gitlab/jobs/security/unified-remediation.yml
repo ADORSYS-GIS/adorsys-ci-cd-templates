@@ -1,34 +1,6 @@
 # Unified Security Remediation CI Job Templates
 # Aggregates findings from OWASP, Trivy, CycloneDX, and Renovate; resolves
 # fix versions; and either augments an existing Renovate MR or creates a new one.
-#
-# Required CI/CD Variables:
-#   GITLAB_TOKEN  - GitLab PAT with api scope (for MR creation/augmentation)
-#   CI_JOB_TOKEN  - Automatically provided by GitLab CI (for script download)
-#   GITLAB_API    - Base URL of this GitLab instance (e.g. https://git.example.com)
-#                   Set this at the project or group CI/CD variable settings level,
-#                   not in this file, so it stays out of version control.
-#   ADORSYS_CI_TEMPLATES_PROJECT - URL-path of this repo (e.g. group/subgroup/adorsys-ci-cd-templates)
-#                   Also set at the project or group CI/CD variable settings level.
-#
-# Optional Variables:
-#   GITLAB_CI_TEMPLATES_REF - Override the auto-detected tag (e.g. "v1.3.5")
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'ci/gitlab/jobs/security/unified-remediation.yml'
-#
-#   Unified Remediation (push):
-#     extends:
-#       - .unified-remediation-base
-#       - .unified-remediation-download-scripts
-#
-# For scheduled scans (target + develop + support branches), also include:
-#       file: 'ci/gitlab/jobs/security/unified-remediation-scheduled.yml'
-#
-#   Unified Remediation:
-#     extends: .unified-remediation-scheduled
 
 .unified-remediation-base:
   image: python:3.11-slim

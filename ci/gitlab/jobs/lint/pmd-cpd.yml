@@ -1,13 +1,5 @@
 # PMD/CPD static analysis
 # Runs PMD and Copy-Paste Detector for Java code
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'ci/gitlab/jobs/lint/pmd-cpd.yml'
-#
-#   Lint PMD/CPD:
-#     extends: .lint-pmd-cpd
 
 .lint-pmd-cpd:
   image: "${JAVA_MAVEN_IMAGE}"
@@ -45,15 +37,6 @@
 
 # Makefile-based PMD lint variant.
 # For projects where PMD is invoked through a Makefile target rather than Maven directly.
-#
-# Usage:
-#   Lint (PMD CPD):
-#     extends: .lint-pmd-cpd-make
-#     variables:
-#       PMD_MAKE_TARGET: "lint-pmd-cpd-report"  # override if needed
-#
-# Variables:
-#   PMD_MAKE_TARGET - The make target to invoke. Default: lint-pmd-cpd-report
 .lint-pmd-cpd-make:
   image: "${JAVA_MAVEN_IMAGE}"
   stage: Lint

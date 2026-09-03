@@ -1,16 +1,5 @@
 # Dockerfile linting with Hadolint
 # Validates Dockerfiles using Hadolint best practices
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'ci/gitlab/jobs/lint/dockerfile-lint.yml'
-#
-#   Lint Dockerfiles:
-#     extends: .lint-dockerfiles
-#     script:
-#       - docker run --rm -i hadolint/hadolint < Dockerfile
-#       - docker run --rm -i hadolint/hadolint < app/Dockerfile
 
 .lint-dockerfiles-base:
   image: docker

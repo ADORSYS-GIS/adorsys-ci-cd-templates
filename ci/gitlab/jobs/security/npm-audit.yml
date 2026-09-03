@@ -3,22 +3,6 @@
 # Equivalent to OWASP Dependency Check but for npm ecosystems.
 #
 # See: https://docs.npmjs.com/cli/v10/commands/npm-audit
-#
-# ── USAGE ────────────────────────────────────────────────────────────────────
-# include:
-#   - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#     ref: 'v1.2.0'
-#     file: 'ci/gitlab/jobs/security/npm-audit.yml'
-#
-# Security (npm audit):
-#   extends: .npm-audit
-#   variables:
-#     # Comma-separated directories containing package-lock.json, relative to project root.
-#     NPM_AUDIT_DIRS: "oba-ui,tpp-ui,admin-ui,developer-portal-ui"
-#
-# ── VARIABLES ────────────────────────────────────────────────────────────────
-# NPM_AUDIT_DIRS  - Comma-separated list of directories. Default: "." (root)
-# NPM_AUDIT_LEVEL - Minimum severity to fail: low|moderate|high|critical. Default: high
 
 .npm-audit:
   stage: Security

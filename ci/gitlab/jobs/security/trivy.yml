@@ -1,22 +1,6 @@
 # Trivy Security Scanner CI Job Templates (push-triggered)
 # Scans Maven dependencies (filesystem mode) and Dockerfiles (config mode)
 # for HIGH and CRITICAL vulnerabilities using Aqua Trivy.
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'ci/gitlab/jobs/security/trivy.yml'
-#
-#   Trivy Filesystem Scan:
-#     extends: .trivy-fs
-#
-#   Trivy Container Image Scan (after docker build):
-#     extends: .trivy-image
-#     variables:
-#       TRIVY_IMAGE: "my-registry/my-app:latest"
-#
-# For scheduled scans, also include:
-#       file: 'ci/gitlab/jobs/security/trivy-scheduled.yml'
 
 .trivy-fs:
   stage: Security

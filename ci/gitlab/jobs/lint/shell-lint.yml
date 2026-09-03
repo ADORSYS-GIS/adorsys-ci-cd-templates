@@ -4,24 +4,7 @@
 # This is OPT-IN and additive: existing consumers are unaffected. It downloads
 # the shared script from this templates repo at runtime, mirroring the pattern
 # already used by cd/gitlab/jobs/notify/slack-notify.yml.
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-templates'
-#       ref: 'main'
-#       file: 'ci/gitlab/jobs/lint/shell-lint.yml'
-#
-#   Lint (Shell):
-#     extends: .lint-shell
-#     variables:
-#       SHELL_LINT_PATHS: "scripts hooks"
-#
-# Variables:
-#   SHELL_LINT_PATHS   Space-separated dirs to scan (default: "scripts")
-#   SHELL_LINT_SEVERITY ShellCheck severity (default: "warning")
-#   SHELL_LINT_STRICT  "true" to fail on findings (default: warn-only)
-#   ADORSYS_CI_TEMPLATES_PROJECT URL-path of this repo (required - set via project/group CI/CD variable, e.g. group/subgroup/adorsys-ci-cd-templates)
-#   ADORSYS_CI_TEMPLATES_REF     Ref to fetch the shared script from (default main)
+
 .lint-shell:
   image: debian:stable-slim
   stage: Lint

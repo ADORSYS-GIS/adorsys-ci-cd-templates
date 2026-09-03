@@ -39,7 +39,7 @@ format_jobs_list() {
 
 get_pages_path() {
     local fp="${CI_PROJECT_PATH:-${CI_PROJECT_NAME:-unknown}}"
-    [[ "$fp" == adorsys/* ]] && echo "${fp#adorsys/}" || echo "$fp"
+    echo "${fp#*/}"
 }
 
 send_notification() {

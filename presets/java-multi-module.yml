@@ -1,29 +1,22 @@
 # Java Multi-Module Project Preset
 # Pre-configured CI pipeline for Java/Maven multi-module projects
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'presets/java-multi-module.yml'
 
 include:
-  - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-    file:
-      - 'ci/gitlab/services/docker-dind.yml'
-      - 'ci/gitlab/variables/java-variables.yml'
-      - 'ci/gitlab/variables/maven-variables.yml'
-      - 'ci/gitlab/variables/docker-variables.yml'
-      - 'ci/gitlab/jobs/lint/ci-file-lint.yml'
-      - 'ci/gitlab/jobs/lint/docker-compose-lint.yml'
-      - 'ci/gitlab/jobs/lint/dockerfile-lint.yml'
-      - 'ci/gitlab/jobs/lint/pmd-cpd.yml'
-      - 'ci/gitlab/jobs/lint/yaml-json-xml-lint.yml'
-      - 'ci/gitlab/jobs/security/owasp-dependency-check.yml'
-      - 'ci/gitlab/jobs/security/renovate.yml'
-      - 'ci/gitlab/jobs/build/java-maven.yml'
-      - 'ci/gitlab/jobs/test/java-tests.yml'
-      - 'ci/gitlab/jobs/security/sonarqube.yml'
-      - 'cd/gitlab/jobs/release/maven/maven-release.yml'
+  - local: 'ci/gitlab/services/docker-dind.yml'
+  - local: 'ci/gitlab/variables/java-variables.yml'
+  - local: 'ci/gitlab/variables/maven-variables.yml'
+  - local: 'ci/gitlab/variables/docker-variables.yml'
+  - local: 'ci/gitlab/jobs/lint/ci-file-lint.yml'
+  - local: 'ci/gitlab/jobs/lint/docker-compose-lint.yml'
+  - local: 'ci/gitlab/jobs/lint/dockerfile-lint.yml'
+  - local: 'ci/gitlab/jobs/lint/pmd-cpd.yml'
+  - local: 'ci/gitlab/jobs/lint/yaml-json-xml-lint.yml'
+  - local: 'ci/gitlab/jobs/security/owasp-dependency-check.yml'
+  - local: 'ci/gitlab/jobs/security/renovate.yml'
+  - local: 'ci/gitlab/jobs/build/java-maven.yml'
+  - local: 'ci/gitlab/jobs/test/java-tests.yml'
+  - local: 'ci/gitlab/jobs/security/sonarqube.yml'
+  - local: 'cd/gitlab/jobs/release/maven/maven-release.yml'
 
 stages:
   - Lint

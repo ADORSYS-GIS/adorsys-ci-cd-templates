@@ -1,10 +1,5 @@
 # Maven common variables and cache configuration
 # Include this template to set up Maven caching and repository paths
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'ci/gitlab/variables/maven-variables.yml'
 
 .variables-maven:
   variables:

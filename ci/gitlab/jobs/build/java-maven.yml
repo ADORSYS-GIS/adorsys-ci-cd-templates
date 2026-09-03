@@ -1,15 +1,5 @@
 # Java Maven build job template
 # Compiles Java projects using a project-provided Maven image
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'ci/gitlab/jobs/build/java-maven.yml'
-#
-#   Build Java:
-#     extends: .build-java-maven
-#     variables:
-#       JAVA_MAVEN_IMAGE: "maven:3.9-eclipse-temurin-21"
 
 .build-java-maven-base:
   image: "${JAVA_MAVEN_IMAGE}"

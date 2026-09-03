@@ -3,24 +3,9 @@
 #
 # Only fails the pipeline on HIGH/CRITICAL (CVSS >= 7.0).
 # Reports still contain all severities for audit purposes.
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'ci/gitlab/jobs/security/owasp-dependency-check.yml'
-#
-#   OWASP Dependency Check:
-#     extends: .owasp-dependency-check
-#     variables:
-#       NVD_API_KEY: $NVD_API_KEY
-#
-# For scheduled scans, also include:
-#       file: 'ci/gitlab/jobs/security/owasp-dependency-check-scheduled.yml'
 
-# Strict (allow_failure: false) variants are in the sub-file included below.
 include:
-  - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-    file: 'ci/gitlab/jobs/security/owasp-dependency-check-strict.yml'
+  - local: 'ci/gitlab/jobs/security/owasp-dependency-check-strict.yml'
 
 .owasp-dependency-check:
   image: "${JAVA_MAVEN_IMAGE}"

@@ -6,16 +6,12 @@
 #   registries. Trigger via MAVEN_RELEASE_ROLLBACK=true. The script is composed
 #   from ordered fragments so the job remains self-contained.
 
-# Sub-files are fetched from the default branch of gitlab-ci-templates at include time.
+
 include:
-  - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-    file: 'cd/gitlab/jobs/release/maven/maven-release-rollback-init.yml'
-  - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-    file: 'cd/gitlab/jobs/release/maven/maven-release-rollback-helpers-detection.yml'
-  - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-    file: 'cd/gitlab/jobs/release/maven/maven-release-rollback-preflight-force-push.yml'
-  - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-    file: 'cd/gitlab/jobs/release/maven/maven-release-rollback-cleanup-summary.yml'
+  - local: 'cd/gitlab/jobs/release/maven/maven-release-rollback-init.yml'
+  - local: 'cd/gitlab/jobs/release/maven/maven-release-rollback-helpers-detection.yml'
+  - local: 'cd/gitlab/jobs/release/maven/maven-release-rollback-preflight-force-push.yml'
+  - local: 'cd/gitlab/jobs/release/maven/maven-release-rollback-cleanup-summary.yml'
 
 .maven-release-rollback-base:
   image: "${JAVA_MAVEN_IMAGE}"

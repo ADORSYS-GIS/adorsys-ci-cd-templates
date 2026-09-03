@@ -4,13 +4,7 @@
 # This file defines runnable Test/Security/Release jobs plus hidden Compile
 # templates (`.build-java-backend`, `.build-node-ui`) that consumers must
 # extend with their own job name, since compile setup (e.g. UI_MODULE) is
-# project-specific. Both files must be included together:
-#
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file:
-#         - 'presets/full-stack.yml'
-#         - 'presets/full-stack-build.yml'
+# project-specific. Both files must be included together.
 
 # ==================== COMPILE STAGE ====================
 

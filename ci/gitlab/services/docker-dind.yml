@@ -1,15 +1,5 @@
 # Docker-in-Docker service configuration
 # Include this template when using Docker operations in CI jobs
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'ci/gitlab/services/docker-dind.yml'
-#
-#   Build Docker Image:
-#     extends: .docker-dind-service
-#     script:
-#       - docker build ...
 
 .docker-dind-service:
   services:

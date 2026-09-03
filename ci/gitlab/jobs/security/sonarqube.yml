@@ -3,16 +3,6 @@
 # Standard Experience uses BLOCKER and CRITICAL issue severities. HIGH is an
 # impact level used by Multi-Quality Rule mode, not a Standard Experience API
 # severity.
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'ci/gitlab/jobs/security/sonarqube.yml'
-#
-#   Upload to SonarQube:
-#     extends: .sonarqube-upload
-#     variables:
-#       SONAR_PROJECT_KEY: "my-project-key"
 
 .sonarqube-upload:
   image: "${JAVA_MAVEN_IMAGE}"
@@ -102,15 +92,6 @@
 # Use on develop and MR pipelines where quality must be enforced.
 # Each project must add project-specific `dependencies:` to collect artifacts
 # from the build, test, and security jobs.
-#
-# Usage:
-#   Upload to SonarQube:
-#     extends: .sonarqube-upload-strict
-#     dependencies:
-#       - "Build Java"
-#       - "Test (Unit Tests)"
-#       - "Security (owasp-dep-check)"
-#       - "Lint (PMD CPD)"
 
 .sonarqube-upload-strict:
   extends: .sonarqube-upload-with-deps
@@ -144,15 +125,6 @@
 #   - allow_failure: false  → a failing quality gate blocks the pipeline
 #   - sonar.qualitygate.wait=true → blocks until the dashboard reports a result
 #   - Rules: MR pipelines + any protected/default branch; never on schedules
-#
-# Usage:
-#   Upload to SonarQube:
-#     extends: .sonarqube-security-gate          # (or -with-settings)
-#     dependencies:
-#       - "Build Java"
-#       - "Test (Unit Tests)"
-#       - "Lint (PMD check)"
-#     # No rules: override needed — template rules cover all cases.
 
 .sonarqube-security-gate:
   image: "${JAVA_MAVEN_IMAGE}"

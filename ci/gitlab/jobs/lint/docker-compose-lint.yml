@@ -4,14 +4,6 @@
 ---
 # Docker Compose linting
 # Validates Docker Compose files for syntax
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'ci/gitlab/jobs/lint/docker-compose-lint.yml'
-#
-#   Lint Docker Compose:
-#     extends: .lint-docker-compose
 
 .lint-docker-compose:
   image: "${JAVA_MAVEN_IMAGE}"

@@ -19,7 +19,7 @@ each consuming project sets its own value.
 | `SONAR_HOST_URL` / `SONAR_TOKEN` | SonarQube server + auth token | Group |
 | `SONAR_PROJECT_KEY` | SonarQube project key | Project |
 | `DOCKER_REGISTRY` | Docker registry host (we only push to our own registry, no Docker Hub) | Group |
-| `ADORSYS_REGISTRY_USER` / `ADORSYS_REGISTRY_PASSWORD` | Docker registry login | Group |
+| `DOCKER_REGISTRY_USER` / `DOCKER_REGISTRY_PASSWORD` | Docker registry login | Group |
 | `DOCKERHUB_NAMESPACE` | Docker image namespace | Project |
 | `XS2A_VERSION` / `CONNECTOR_VERSION` / `LEDGERS_VERSION` | Versions resolved from pom.xml | Project |
 | `GITHUB_DEPLOY_KEY_BASE64` / `GITHUB_TOKEN` | Auth for github-sync push | Project |

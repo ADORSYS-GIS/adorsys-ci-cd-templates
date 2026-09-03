@@ -1,13 +1,5 @@
 # GitLab CI file linting
 # Validates .gitlab-ci.yml files using yamllint
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'ci/gitlab/jobs/lint/ci-file-lint.yml'
-#
-#   Lint CI File:
-#     extends: .lint-ci-file
 
 .lint-ci-file:
   image: debian:stable-slim

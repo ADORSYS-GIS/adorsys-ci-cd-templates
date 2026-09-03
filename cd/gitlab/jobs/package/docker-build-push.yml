@@ -1,16 +1,5 @@
 # Docker build and push job templates
 # Builds and pushes Docker images to GitLab registry
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'cd/gitlab/jobs/package/docker-build-push.yml'
-#
-#   Build and push images (develop):
-#     extends: .docker-build-push-develop
-#     variables:
-#       DOCKERHUB_NAMESPACE: "adorsys/xs2a/my-project"
-#       DOCKER_IMAGE_NAMES: "app1,app2,app3"
 
 .docker-build-push-base:
   image: docker:27.3.1-cli

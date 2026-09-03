@@ -1,15 +1,5 @@
 # GitHub synchronization job template
 # Syncs branches to GitHub repository
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'cd/gitlab/jobs/release/github/github-sync.yml'
-#
-#   sync_to_github:
-#     extends: .github-sync
-#     variables:
-#       GITHUB_REPOSITORY: "adorsys/my-project"
 
 .github-sync:
   image: alpine/git
@@ -66,28 +56,6 @@
 # HTTPS-token-based GitHub sync.
 # For projects that authenticate with $GITHUB_TOKEN (personal/project access token)
 # rather than SSH deploy keys. Pushes versioned release/support branches by pattern.
-#
-# Usage:
-#   clone_to_github:
-#     extends: .github-sync-token
-#     stage: "Clone to github"
-#     needs: []
-#     rules:
-#       - if: '$CI_PIPELINE_SOURCE == "schedule"'
-#         when: never
-#       - if: '$CI_COMMIT_BRANCH =~ /release-6/ || $CI_COMMIT_BRANCH == "support-6.x"'
-#         when: always
-#       - when: never
-#     variables:
-#       GITHUB_USERNAME: adorsys
-#       GITHUB_REPOSITORY: adorsys/XS2A-Sandbox
-#       GITHUB_PROJECT_CLONE_VERSION: "6"
-#
-# Variables:
-#   GITHUB_TOKEN                   - Access token with push permission (from CI secrets)
-#   GITHUB_USERNAME                - Git author name for commits
-#   GITHUB_REPOSITORY              - Target GitHub repo, e.g. adorsys/XS2A-Sandbox
-#   GITHUB_PROJECT_CLONE_VERSION   - Version string to filter branches (e.g. "6")
 .github-sync-token:
   image: alpine/git:latest
   stage: Release

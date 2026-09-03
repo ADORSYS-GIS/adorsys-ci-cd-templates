@@ -1,21 +1,8 @@
 # Maven release job templates
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'cd/gitlab/jobs/release/maven/maven-release.yml'
-#
-#   Release artifacts (develop):
-#     extends: .maven-release-snapshot
-#     variables:
-#       JAVA_MAVEN_IMAGE: "maven:3.9-eclipse-temurin-21"
 
-# Sub-files are fetched from the default branch of gitlab-ci-templates at include time.
 include:
-  - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-    file: 'cd/gitlab/jobs/release/maven/maven-release-plugin-scripts.yml'
-  - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-    file: 'cd/gitlab/jobs/release/maven/maven-release-rollback.yml'
+  - local: 'cd/gitlab/jobs/release/maven/maven-release-plugin-scripts.yml'
+  - local: 'cd/gitlab/jobs/release/maven/maven-release-rollback.yml'
 
 .maven-release-base:
   image: "${JAVA_MAVEN_IMAGE}"
