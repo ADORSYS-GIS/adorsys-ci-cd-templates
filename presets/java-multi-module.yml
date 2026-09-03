@@ -1,0 +1,114 @@
+# Java Multi-Module Project Preset
+# Pre-configured CI pipeline for Java/Maven multi-module projects
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file: 'presets/java-multi-module.yml'
+
+include:
+  - project: 'adorsys/xs2a/gitlab-ci-templates'
+    file:
+      - 'ci/gitlab/services/docker-dind.yml'
+      - 'ci/gitlab/variables/java-variables.yml'
+      - 'ci/gitlab/variables/maven-variables.yml'
+      - 'ci/gitlab/variables/docker-variables.yml'
+      - 'ci/gitlab/jobs/lint/ci-file-lint.yml'
+      - 'ci/gitlab/jobs/lint/docker-compose-lint.yml'
+      - 'ci/gitlab/jobs/lint/dockerfile-lint.yml'
+      - 'ci/gitlab/jobs/lint/pmd-cpd.yml'
+      - 'ci/gitlab/jobs/security/owasp-dependency-check.yml'
+      - 'ci/gitlab/jobs/security/renovate.yml'
+      - 'ci/gitlab/jobs/build/java-maven.yml'
+      - 'ci/gitlab/jobs/test/java-tests.yml'
+      - 'ci/gitlab/jobs/package/sonarqube.yml'
+      - 'cd/gitlab/jobs/release/maven-release.yml'
+
+stages:
+  - Lint
+  - Compile
+  - Test
+  - Security
+  - Package
+  - Release
+
+variables:
+  MAVEN_REPO_PATH: ".m2/repository"
+  MAVEN_OPTS: "-Dmaven.repo.local=${CI_PROJECT_DIR}/${MAVEN_REPO_PATH}"
+  DOCKERHUB_REGISTRY: "gitlab-registry.adorsys.de"
+
+# ==================== LINT STAGE ====================
+
+Lint (CI file):
+  extends: .lint-ci-file
+  rules: !reference [.pipeline-feature-branches-only, rules]
+
+Lint (YAML, JSON, XML):
+  extends: .lint-yaml-json-xml
+  rules: !reference [.pipeline-feature-branches-only, rules]
+
+Lint (Docker Compose):
+  extends: .lint-docker-compose-multi
+  rules: !reference [.pipeline-feature-branches-only, rules]
+
+Lint (Dockerfiles):
+  extends: .lint-dockerfiles-multi
+  tags:
+    - aws
+  rules: !reference [.pipeline-feature-branches-only, rules]
+
+Lint (PMD/CPD):
+  extends: .lint-pmd-cpd
+  rules: !reference [.pipeline-feature-branches-only, rules]
+
+Security (OWASP Dependency Check):
+  extends: .owasp-dependency-check
+  rules: !reference [.pipeline-always-except-schedules, rules]
+
+# ==================== COMPILE STAGE ====================
+
+Build (Multi-Module):
+  extends: .build-java-maven-base
+  stage: Compile
+  rules: !reference [.pipeline-always-except-schedules, rules]
+  script:
+    - make build-java-services
+  cache:
+    key: "Java_${CI_COMMIT_REF_SLUG}"
+    paths:
+      - .m2/repository
+  artifacts:
+    paths:
+      - "**/target/classes"
+      - "**/target/*.jar"
+    name: "${CI_PROJECT_NAME}-${CI_BUILD_REF_NAME#*v}"
+    expire_in: "1 day"
+
+# ==================== TEST STAGE ====================
+
+Test (Unit):
+  extends: .test-java-unit
+  rules: !reference [.pipeline-always-except-schedules, rules]
+
+Test (Integration):
+  extends: .test-java-integration-maven
+  rules: !reference [.pipeline-always-except-schedules, rules]
+
+Test (Javadoc):
+  extends: .test-javadoc
+  rules: !reference [.pipeline-always-except-schedules, rules]
+
+# ==================== PACKAGE STAGE ====================
+
+SonarQube:
+  extends: .sonarqube-security-gate
+  needs:
+    - job: "Security (OWASP Dependency Check)"
+
+# ==================== RELEASE STAGE ====================
+
+Release (develop):
+  extends: .maven-release-snapshot
+
+Release (tags):
+  extends: .maven-release-tags

@@ -1,0 +1,70 @@
+# Full Stack Project Preset — Build, Test, Package, and Release stages
+# Companion to full-stack.yml which defines Lint stage jobs.
+#
+# This file defines the build, test, package, and release jobs.
+# Both files must be included together:
+#
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file:
+#         - 'presets/full-stack.yml'
+#         - 'presets/full-stack-build.yml'
+
+# ==================== COMPILE STAGE ====================
+
+.build-java-backend:
+  extends: .build-java-maven-with-artifacts
+  rules: !reference [.pipeline-always-except-schedules, rules]
+
+# Node.js UI Build Template
+.build-node-ui:
+  image: node:${NODE_VERSION}-bookworm-slim
+  stage: Compile
+  rules: !reference [.pipeline-always-except-schedules, rules]
+  script:
+    - apt-get update && apt-get install make libxml2-utils jq -yq
+    - VERSION=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='version']/text()" ../pom.xml || echo "0.0.1")
+    - jq --arg VERSION "$VERSION" --arg BUILD_ID "$CI_PIPELINE_ID" '.version = $VERSION | .build_number = $BUILD_ID' info.json >> info.tmp.json || true
+    - mv info.tmp.json info.json || true
+    - make npm-install-${UI_MODULE}
+  artifacts:
+    paths:
+      - "dist"
+      - "info.json"
+    name: "${CI_PROJECT_NAME}-${CI_BUILD_REF_NAME#*v}"
+    expire_in: "1 day"
+
+# ==================== TEST STAGE ====================
+
+Test (Unit):
+  extends: .test-java-unit
+  rules: !reference [.pipeline-always-except-schedules, rules]
+
+Test (Integration):
+  extends: .test-java-integration
+  tags:
+    - aws
+  rules: !reference [.pipeline-always-except-schedules, rules]
+
+.test-node-ui:
+  image: node:${NODE_VERSION}-bookworm-slim
+  stage: Test
+  rules: !reference [.pipeline-always-except-schedules, rules]
+  variables:
+    CHROME_BIN: "/usr/bin/chromium"
+  script:
+    - apt-get update && apt-get install make chromium chromium-l10n -yq
+    - make unit-tests-${UI_MODULE}
+
+# ==================== SECURITY STAGE ====================
+
+SonarQube:
+  extends: .sonarqube-security-gate
+
+# ==================== RELEASE STAGE ====================
+
+Release (develop):
+  extends: .maven-release-snapshot
+
+Release (tags):
+  extends: .maven-release-tags
