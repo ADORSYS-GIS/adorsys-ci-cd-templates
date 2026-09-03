@@ -334,3 +334,6 @@
   extends: .sonarqube-security-gate
   variables:
     MAVEN_SETTINGS_PATH: "scripts/mvn-release-settings.xml"
+
+.sonarqube-java:
+  extends: .sonarqube-security-gate

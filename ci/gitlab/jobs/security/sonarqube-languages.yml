@@ -17,6 +17,9 @@
   variables:
     SONAR_EXCLUSIONS: "**/node_modules/**,**/dist/**,**/build/**,**/coverage/**"
 
+.sonarqube-angular:
+  extends: .sonarqube-javascript-typescript
+
 .sonarqube-powershell:
   extends: .sonarqube-cli
   variables:
