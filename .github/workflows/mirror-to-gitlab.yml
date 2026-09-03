@@ -36,5 +36,10 @@ jobs:
         run: |
           git remote remove gitlab 2>/dev/null || true
           git remote add gitlab "https://oauth2:${GITLAB_TOKEN}@git.adorsys.de/adorsys/xs2a/gitlab-ci-templates.git"
-          git push gitlab 'HEAD:refs/heads/main'
+          # Try a normal (fast-forward) push first; only force when GitLab
+          # main has diverged (e.g. first bootstrap or a GitHub history rewrite).
+          if ! git push gitlab 'HEAD:refs/heads/main'; then
+            echo "Fast-forward push rejected - forcing GitHub's main onto GitLab (source of truth is GitHub)."
+            git push --force gitlab 'HEAD:refs/heads/main'
+          fi
           git push --prune gitlab '+refs/tags/*:refs/tags/*'
