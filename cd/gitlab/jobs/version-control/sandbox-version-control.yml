@@ -1,0 +1,161 @@
+# Sandbox Version Control Job Templates
+# Updates image tags in a companion infrastructure repository (sandbox-openshift)
+# whenever dependency versions change in psd2-dynamic-sandbox.
+#
+# Three environments are covered:
+#   dev-k8s   – triggered on `develop` when pom.xml changes
+#   e2e-k8s   – triggered on schedules when pom.xml changes
+#   integ-k8s – triggered by tags matching /9\..*/
+#
+# Required CI/CD Variables:
+#   PUSH_TOKEN         – GitLab access token with push access to sandbox-openshift
+#   GITLAB_USER_NAME   – Git author name
+#   GITLAB_USER_EMAIL  – Git author email
+#
+# Required project variables (typically set in the consuming .gitlab-ci.yml):
+#   XS2A_VERSION       – resolved from pom.xml <xs2a.version>
+#   CONNECTOR_VERSION  – resolved from pom.xml <connector.version>
+#   LEDGERS_VERSION    – resolved from pom.xml <ledgers.version>
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file: 'cd/gitlab/jobs/version-control/sandbox-version-control.yml'
+#
+#   Change dependencies versions (develop):
+#     extends: .sandbox-version-control-dev
+#
+#   Change dependencies versions (E2E):
+#     extends: .sandbox-version-control-e2e
+#
+#   Change dependencies versions (INTEG):
+#     extends: .sandbox-version-control-integ
+
+# ── Common setup ──────────────────────────────────────────────────────────────
+
+.sandbox-version-control-base:
+  image: alpine
+  stage: "Version Control"
+  before_script:
+    - apk add git openssh-client
+    - git config --global user.name "$GITLAB_USER_NAME"
+    - git config --global user.email "$GITLAB_USER_EMAIL"
+    - mkdir -p ~/sandbox
+    - cd ~/sandbox
+    - git clone https://push-token:$PUSH_TOKEN@git.adorsys.de/adorsys/xs2a/sandbox-openshift.git
+    - cd sandbox-openshift
+    - git checkout master
+  # Subclasses define the script section to resolve versions and update env YAMLs.
+
+# ── dev-k8s (develop + pom.xml changes) ──────────────────────────────────────
+
+.sandbox-version-control-dev:
+  extends: .sandbox-version-control-base
+  only:
+    refs:
+      - develop
+    changes:
+      - pom.xml
+  except:
+    - schedules
+  script:
+    - XS2A_VERSION=$(cat $CI_PROJECT_DIR/pom.xml | grep "<xs2a.version>" | awk -F"[<>]" '//{print $3}')
+    - CONNECTOR_VERSION=$(cat $CI_PROJECT_DIR/pom.xml | grep "<connector.version>" | awk -F"[<>]" '//{print $3}')
+    - LEDGERS_VERSION=$(cat $CI_PROJECT_DIR/pom.xml | grep "<ledgers.version>" | awk -F"[<>]" '//{print $3}')
+    - >
+      if [[ "$XS2A_VERSION" =~ "\d{1,2}\.\d{1,2}-SNAPSHOT" ]]; then
+      XS2A_VERSION=develop;
+      fi
+    - >
+      if [[ "$CONNECTOR_VERSION" =~ "\d{1,2}\.\d{1,2}-SNAPSHOT" ]]; then
+      CONNECTOR_VERSION=develop;
+      fi
+    - >
+      if [[ "$LEDGERS_VERSION" =~ "\d{1,2}\.\d{1,2}-SNAPSHOT" ]]; then
+      LEDGERS_VERSION=develop;
+      fi
+    - |
+      sed -i "s/tag: .*$/tag: \"$XS2A_VERSION\"/" env/adorsys-modelbank-dev-k8s/certificate-generator/env.yaml
+      sed -i "s/tag: .*$/tag: \"$LEDGERS_VERSION\"/" env/adorsys-modelbank-dev-k8s/keycloak/env.yaml
+      sed -i "s/tag: .*$/tag: \"$LEDGERS_VERSION\"/" env/adorsys-modelbank-dev-k8s/ledgers/env.yaml
+      sed -i "s/tag: .*$/tag: \"$XS2A_VERSION\"/" env/adorsys-modelbank-dev-k8s/xs2a-aspsp-profile/env.yaml
+      sed -i "s/tag: .*$/tag: \"$CONNECTOR_VERSION\"/" env/adorsys-modelbank-dev-k8s/xs2a-connector/env.yaml
+      sed -i "s/tag: .*$/tag: \"$XS2A_VERSION\"/" env/adorsys-modelbank-dev-k8s/xs2a-consent-management/env.yaml
+      sed -i "s/tag: .*$/tag: \"$XS2A_VERSION\"/" env/adorsys-modelbank-dev-k8s/xs2a-embedded/env.yaml
+  after_script:
+    - cd ~/sandbox/sandbox-openshift
+    - git status
+    - git add .
+    - git commit -m "changed dependencies versions" || echo "Nothing to commit"
+    - git push origin master
+
+# ── e2e-k8s (schedules + pom.xml changes) ────────────────────────────────────
+
+.sandbox-version-control-e2e:
+  extends: .sandbox-version-control-base
+  only:
+    refs:
+      - schedules
+    changes:
+      - pom.xml
+  script:
+    - XS2A_VERSION=$(cat $CI_PROJECT_DIR/pom.xml | grep "<xs2a.version>" | awk -F"[<>]" '//{print $3}')
+    - CONNECTOR_VERSION=$(cat $CI_PROJECT_DIR/pom.xml | grep "<connector.version>" | awk -F"[<>]" '//{print $3}')
+    - LEDGERS_VERSION=$(cat $CI_PROJECT_DIR/pom.xml | grep "<ledgers.version>" | awk -F"[<>]" '//{print $3}')
+    - >
+      if [[ "$XS2A_VERSION" =~ "\d{1,2}\.\d{1,2}-SNAPSHOT" ]]; then
+      XS2A_VERSION=develop;
+      fi
+    - >
+      if [[ "$CONNECTOR_VERSION" =~ "\d{1,2}\.\d{1,2}-SNAPSHOT" ]]; then
+      CONNECTOR_VERSION=develop;
+      fi
+    - >
+      if [[ "$LEDGERS_VERSION" =~ "\d{1,2}\.\d{1,2}-SNAPSHOT" ]]; then
+      LEDGERS_VERSION=develop;
+      fi
+    - |
+      sed -i "s/tag: .*$/tag: \"$XS2A_VERSION\"/" env/adorsys-modelbank-e2e-k8s/certificate-generator/env.yaml
+      sed -i "s/tag: .*$/tag: \"$LEDGERS_VERSION\"/" env/adorsys-modelbank-e2e-k8s/keycloak/env.yaml
+      sed -i "s/tag: .*$/tag: \"$LEDGERS_VERSION\"/" env/adorsys-modelbank-e2e-k8s/ledgers/env.yaml
+      sed -i "s/tag: .*$/tag: \"$XS2A_VERSION\"/" env/adorsys-modelbank-e2e-k8s/xs2a-aspsp-profile/env.yaml
+      sed -i "s/tag: .*$/tag: \"$CONNECTOR_VERSION\"/" env/adorsys-modelbank-e2e-k8s/xs2a-connector/env.yaml
+      sed -i "s/tag: .*$/tag: \"$XS2A_VERSION\"/" env/adorsys-modelbank-e2e-k8s/xs2a-consent-management/env.yaml
+  after_script:
+    - cd ~/sandbox/sandbox-openshift
+    - git status
+    - git add .
+    - git commit -m "changed dependencies versions" || echo "Nothing to commit"
+    - git push origin master
+
+# ── integ-k8s (tags matching /9\..*/) ────────────────────────────────────────
+
+.sandbox-version-control-integ:
+  extends: .sandbox-version-control-base
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /9\...*/'
+      when: always
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - when: never
+  script:
+    - XS2A_VERSION=$(cat $CI_PROJECT_DIR/pom.xml | grep "<xs2a.version>" | awk -F"[<>]" '//{print $3}')
+    - CONNECTOR_VERSION=$(cat $CI_PROJECT_DIR/pom.xml | grep "<connector.version>" | awk -F"[<>]" '//{print $3}')
+    - LEDGERS_VERSION=$(cat $CI_PROJECT_DIR/pom.xml | grep "<ledgers.version>" | awk -F"[<>]" '//{print $3}')
+    - |
+      sed -i "s/tag: .*$/tag: \"$XS2A_VERSION\"/" env/adorsys-modelbank-integ-k8s/certificate-generator/env.yaml
+      sed -i "s/tag: .*$/tag: \"$LEDGERS_VERSION\"/" env/adorsys-modelbank-integ-k8s/keycloak/env.yaml
+      sed -i "s/tag: .*$/tag: \"$LEDGERS_VERSION\"/" env/adorsys-modelbank-integ-k8s/ledgers/env.yaml
+      sed -i "s/tag: .*$/tag: \"$XS2A_VERSION\"/" env/adorsys-modelbank-integ-k8s/xs2a-aspsp-profile/env.yaml
+      sed -i "s/tag: .*$/tag: \"$CONNECTOR_VERSION\"/" env/adorsys-modelbank-integ-k8s/xs2a-connector/env.yaml
+      sed -i "s/tag: .*$/tag: \"$XS2A_VERSION\"/" env/adorsys-modelbank-integ-k8s/xs2a-consent-management/env.yaml
+      sed -i "s/tag: .*$/tag: \"$CI_COMMIT_TAG\"/" env/adorsys-modelbank-integ-k8s/modelbank-admin/env.yaml
+      sed -i "s/tag: .*$/tag: \"$CI_COMMIT_TAG\"/" env/adorsys-modelbank-integ-k8s/modelbank-devportal/env.yaml
+      sed -i "s/tag: .*$/tag: \"$CI_COMMIT_TAG\"/" env/adorsys-modelbank-integ-k8s/modelbank-oba/env.yaml
+      sed -i "s/tag: .*$/tag: \"$CI_COMMIT_TAG\"/" env/adorsys-modelbank-integ-k8s/modelbank-tpp/env.yaml
+  after_script:
+    - cd ~/sandbox/sandbox-openshift
+    - git status
+    - git add .
+    - git commit -m "changed dependencies versions" || echo "Nothing to commit"
+    - git push origin master

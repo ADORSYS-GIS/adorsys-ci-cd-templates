@@ -1,0 +1,64 @@
+# Full Stack Project Preset (JavaBackend + Node.js Frontend)
+# Pre-configured CI pipeline for projects with both backend and frontend components
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file: 'presets/full-stack.yml'
+
+include:
+  - project: 'adorsys/xs2a/gitlab-ci-templates'
+    file:
+      - 'ci/gitlab/services/docker-dind.yml'
+      - 'ci/gitlab/variables/java-variables.yml'
+      - 'ci/gitlab/variables/maven-variables.yml'
+      - 'ci/gitlab/variables/docker-variables.yml'
+      - 'ci/gitlab/jobs/lint/ci-file-lint.yml'
+      - 'ci/gitlab/jobs/lint/dockerfile-lint.yml'
+      - 'ci/gitlab/jobs/lint/yaml-json-xml-lint.yml'
+      - 'ci/gitlab/jobs/lint/pmd-cpd.yml'
+      - 'ci/gitlab/jobs/security/owasp-dependency-check.yml'
+      - 'ci/gitlab/jobs/security/renovate.yml'
+      - 'ci/gitlab/jobs/security/npm-audit.yml'
+      - 'ci/gitlab/jobs/build/java-maven.yml'
+      - 'ci/gitlab/jobs/test/java-tests.yml'
+      - 'ci/gitlab/jobs/security/sonarqube.yml'
+      - 'cd/gitlab/jobs/release/maven/maven-release.yml'
+
+stages:
+  - Lint
+  - Compile
+  - Test
+  - Security
+  - Package
+  - Release
+
+variables:
+  NODE_VERSION: "18.19.1"
+  MAVEN_REPO_PATH: ".m2/repository"
+  MAVEN_OPTS: "-Dmaven.repo.local=${CI_PROJECT_DIR}/${MAVEN_REPO_PATH}"
+  DOCKERHUB_REGISTRY: "gitlab-registry.adorsys.de"
+
+# ==================== LINT STAGE ====================
+
+Lint (CI file):
+  extends: .lint-ci-file
+  rules: !reference [.pipeline-feature-branches-only, rules]
+
+Lint (YAML, JSON, XML):
+  extends: .lint-yaml-json-xml
+  rules: !reference [.pipeline-feature-branches-only, rules]
+
+Lint (Dockerfiles):
+  extends: .lint-dockerfiles-multi
+  tags:
+    - aws
+  rules: !reference [.pipeline-feature-branches-only, rules]
+
+Lint (PMD/CPD):
+  extends: .lint-pmd-cpd
+  rules: !reference [.pipeline-feature-branches-only, rules]
+
+Security (OWASP Dependency Check):
+  extends: .owasp-dependency-check
+  rules: !reference [.pipeline-always-except-schedules, rules]

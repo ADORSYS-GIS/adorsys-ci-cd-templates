@@ -1,0 +1,271 @@
+# OWASP Dependency-Check strict (pipeline-blocking) job variants
+# Included automatically by owasp-dependency-check.yml — include that file instead.
+#
+# .owasp-dependency-check-strict               — extends .owasp-dependency-check, allow_failure: false
+# .owasp-dependency-check-maven-settings-strict — extends .owasp-dependency-check-maven-settings, allow_failure: false
+#
+# These variants fail the pipeline on CVSS >= 7.0. The script is large because
+# the scheduled scan path must checkout and re-scan multiple branches in one job.
+
+# ── Strict gate variants (allow_failure: false) ──────────────────────────────
+# Gate the pipeline on develop, MR, release branches, and security-scan schedules.
+# CVEs with CVSS >= 7.0 block the pipeline.
+
+.owasp-dependency-check-strict:
+  extends: .owasp-dependency-check
+  allow_failure: false
+  script:
+    - |
+      # Run the Maven OWASP command; never uses set -e so the caller
+      # can always inspect the exit code and the report files.
+      owasp_run() {
+        local label="$1"; shift
+        local log_file="/tmp/owasp-run-${label}-$$.log"
+        local exit_code=0
+        set +e
+        "$@" 2>&1 | tee "$log_file"
+        exit_code=${PIPESTATUS[0]}
+        set +e  # keep off — callers own error handling
+        if [ "$exit_code" -ne 0 ] && grep -qE "NVD Returned Status Code: [^23]|Connection (timed out|refused)|SocketTimeoutException|UnknownHostException|NvdApiException|Failed to update the NVD|Error updating the NVD" "$log_file"; then
+          echo "ERROR: NVD API unavailable after retries. Error details:"
+          grep -E "NVD Returned Status Code|Connection (timed out|refused)|SocketTimeoutException|UnknownHostException|NvdApiException|Failed to update the NVD|Error updating the NVD" "$log_file" | tail -5 || true
+          if [ -d "dependency-check-data" ] && [ "$(ls -A dependency-check-data 2>/dev/null)" ]; then
+            echo "INFO: Cache found. Falling back to cached NVD data (-DautoUpdate=false)..."
+            set +e
+            "$@" -DautoUpdate=false 2>&1 | tee "${log_file}.fallback"
+            exit_code=${PIPESTATUS[0]}
+            set +e
+          else
+            echo "INFO: No NVD cache available. Running scan without NVD update (scan may be less accurate but will complete)."
+            set +e
+            "$@" -DautoUpdate=false 2>&1 | tee "${log_file}.fallback"
+            exit_code=${PIPESTATUS[0]}
+            set +e
+          fi
+        fi
+        return "$exit_code"
+      }
+      scan_branch_owasp() {
+        local label="$1"
+        echo "=== Scanning branch: $label ==="
+        local s_args=()
+        [ -f "scripts/mvn-release-settings.xml" ] && s_args=(--settings scripts/mvn-release-settings.xml)
+        mkdir -p target
+        set +e
+        owasp_run "$label" mvn -B -ntp "${s_args[@]}" -DnvdApiKey=$NVD_API_KEY -DfailBuildOnCVSS=7 \
+          -DnvdMaxRetryCount=3 \
+          -DdataDirectory=dependency-check-data \
+          -DoutputDirectory=target \
+          org.owasp:dependency-check-maven:aggregate
+        local scan_exit=$?
+        set +e
+        # Always move the report to a branch-labelled filename so all branches'
+        # reports coexist and the wildcard artifact path picks them up.
+        if [ -f "target/dependency-check-report.html" ]; then
+          mv target/dependency-check-report.html "target/dependency-check-report-${label}.html"
+        fi
+        if [ -f "target/dependency-check-report.json" ]; then
+          mv target/dependency-check-report.json  "target/dependency-check-report-${label}.json"
+        fi
+        return "$scan_exit"
+      }
+      if [ "$CI_PIPELINE_SOURCE" = "schedule" ]; then
+        OVERALL_EXIT=0
+        TARGET_LABEL="${CI_COMMIT_BRANCH//\//-}"
+        scan_branch_owasp "$TARGET_LABEL" || OVERALL_EXIT=1
+        if [ "$CI_COMMIT_BRANCH" != "develop" ]; then
+          git fetch origin develop
+          git checkout develop
+          scan_branch_owasp "develop" || OVERALL_EXIT=1
+        fi
+        LATEST_SUPPORT=$(git ls-remote --heads origin 'support-*.x' \
+          | sed -n 's#.*refs/heads/support-\([0-9][0-9]*\)\.x#\1#p' \
+          | awk '$1 % 2 == 0' | sort -n | tail -1)
+        if [ -n "$LATEST_SUPPORT" ]; then
+          SUPPORT_BRANCH="support-${LATEST_SUPPORT}.x"
+          if [ "$CI_COMMIT_BRANCH" != "$SUPPORT_BRANCH" ]; then
+            git fetch origin "$SUPPORT_BRANCH"
+            git checkout "$SUPPORT_BRANCH"
+            scan_branch_owasp "${SUPPORT_BRANCH//\//-}" || OVERALL_EXIT=1
+          fi
+        fi
+        exit $OVERALL_EXIT
+      else
+        s_args=()
+        [ -f "scripts/mvn-release-settings.xml" ] && s_args=(--settings scripts/mvn-release-settings.xml)
+        mkdir -p target
+        set +e
+        mvn -B -ntp "${s_args[@]}" -DnvdApiKey=$NVD_API_KEY -DfailBuildOnCVSS=7 \
+          -DnvdMaxRetryCount=3 \
+          -DdataDirectory=dependency-check-data \
+          -DoutputDirectory=target \
+          org.owasp:dependency-check-maven:aggregate 2>&1 | tee /tmp/owasp-run-$$.log
+        OWASP_EXIT=${PIPESTATUS[0]}
+        set +e
+        if [ "$OWASP_EXIT" -ne 0 ] && grep -qE "NVD Returned Status Code: [^23]|Connection (timed out|refused)|SocketTimeoutException|UnknownHostException|NvdApiException|Failed to update the NVD|Error updating the NVD" /tmp/owasp-run-$$.log; then
+          echo "ERROR: NVD API unavailable after retries. Error details:"
+          grep -E "NVD Returned Status Code|Connection (timed out|refused)|SocketTimeoutException|UnknownHostException|NvdApiException|Failed to update the NVD|Error updating the NVD" /tmp/owasp-run-$$.log | tail -5 || true
+          if [ -d "dependency-check-data" ] && [ "$(ls -A dependency-check-data 2>/dev/null)" ]; then
+            echo "INFO: Cache found. Falling back to cached NVD data (-DautoUpdate=false)..."
+            set +e
+            mvn -B -ntp "${s_args[@]}" -DnvdApiKey=$NVD_API_KEY -DfailBuildOnCVSS=7 \
+              -DautoUpdate=false \
+              -DdataDirectory=dependency-check-data \
+              -DoutputDirectory=target \
+              org.owasp:dependency-check-maven:aggregate
+            OWASP_EXIT=$?
+            set +e
+          else
+            echo "INFO: No NVD cache available. Running scan without NVD update (scan may be less accurate but will complete)."
+            set +e
+            mvn -B -ntp "${s_args[@]}" -DfailBuildOnCVSS=7 \
+              -DautoUpdate=false \
+              -DdataDirectory=dependency-check-data \
+              -DoutputDirectory=target \
+              org.owasp:dependency-check-maven:aggregate
+            OWASP_EXIT=$?
+            set +e
+          fi
+        fi
+        exit "$OWASP_EXIT"
+      fi
+  artifacts:
+    when: always
+    paths:
+      - target/dependency-check-report.html
+      - target/dependency-check-report.json
+      - target/dependency-check-report-*.html
+      - target/dependency-check-report-*.json
+    expire_in: "10 days"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && ($SCHEDULE_TYPE == "security-scan")'
+      when: always
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: on_success
+    - if: '$CI_COMMIT_REF_PROTECTED == "true"'
+      when: on_success
+    - when: never
+
+.owasp-dependency-check-maven-settings-strict:
+  extends: .owasp-dependency-check-maven-settings
+  allow_failure: false
+  script:
+    - |
+      # Run the Maven OWASP command; never uses set -e so the caller
+      # can always inspect the exit code and the report files.
+      owasp_run() {
+        local label="$1"; shift
+        local log_file="/tmp/owasp-run-${label}-$$.log"
+        local exit_code=0
+        set +e
+        "$@" 2>&1 | tee "$log_file"
+        exit_code=${PIPESTATUS[0]}
+        set +e  # keep off — callers own error handling
+        if [ "$exit_code" -ne 0 ] && grep -qE "NVD Returned Status Code: [^23]|Connection (timed out|refused)|SocketTimeoutException|UnknownHostException|NvdApiException|Failed to update the NVD|Error updating the NVD" "$log_file"; then
+          echo "ERROR: NVD API unavailable after retries. Error details:"
+          grep -E "NVD Returned Status Code|Connection (timed out|refused)|SocketTimeoutException|UnknownHostException|NvdApiException|Failed to update the NVD|Error updating the NVD" "$log_file" | tail -5 || true
+          if [ -d "dependency-check-data" ] && [ "$(ls -A dependency-check-data 2>/dev/null)" ]; then
+            echo "INFO: Cache found. Falling back to cached NVD data (-DautoUpdate=false)..."
+            set +e
+            "$@" -DautoUpdate=false 2>&1 | tee "${log_file}.fallback"
+            exit_code=${PIPESTATUS[0]}
+            set +e
+          else
+            echo "INFO: No NVD cache available. Running scan without NVD update (scan may be less accurate but will complete)."
+            set +e
+            "$@" -DautoUpdate=false 2>&1 | tee "${log_file}.fallback"
+            exit_code=${PIPESTATUS[0]}
+            set +e
+          fi
+        fi
+        return "$exit_code"
+      }
+      scan_branch_owasp() {
+        local label="$1"
+        echo "=== Scanning branch: $label ==="
+        mkdir -p target
+        set +e
+        owasp_run "$label" mvn -B -ntp --settings scripts/mvn-release-settings.xml \
+          -DnvdApiKey=$NVD_API_KEY -DfailBuildOnCVSS=7 \
+          -DnvdMaxRetryCount=3 \
+          -DdataDirectory=dependency-check-data \
+          -DoutputDirectory=target \
+          org.owasp:dependency-check-maven:aggregate
+        local scan_exit=$?
+        set +e
+        if [ -f "target/dependency-check-report.html" ]; then
+          mv target/dependency-check-report.html "target/dependency-check-report-${label}.html"
+        fi
+        if [ -f "target/dependency-check-report.json" ]; then
+          mv target/dependency-check-report.json  "target/dependency-check-report-${label}.json"
+        fi
+        return "$scan_exit"
+      }
+      if [ "$CI_PIPELINE_SOURCE" = "schedule" ]; then
+        OVERALL_EXIT=0
+        TARGET_LABEL="${CI_COMMIT_BRANCH//\//-}"
+        scan_branch_owasp "$TARGET_LABEL" || OVERALL_EXIT=1
+        if [ "$CI_COMMIT_BRANCH" != "develop" ]; then
+          git fetch origin develop
+          git checkout develop
+          scan_branch_owasp "develop" || OVERALL_EXIT=1
+        fi
+        LATEST_SUPPORT=$(git ls-remote --heads origin 'support-*.x' \
+          | sed -n 's#.*refs/heads/support-\([0-9][0-9]*\)\.x#\1#p' \
+          | awk '$1 % 2 == 0' | sort -n | tail -1)
+        if [ -n "$LATEST_SUPPORT" ]; then
+          SUPPORT_BRANCH="support-${LATEST_SUPPORT}.x"
+          if [ "$CI_COMMIT_BRANCH" != "$SUPPORT_BRANCH" ]; then
+            git fetch origin "$SUPPORT_BRANCH"
+            git checkout "$SUPPORT_BRANCH"
+            scan_branch_owasp "${SUPPORT_BRANCH//\//-}" || OVERALL_EXIT=1
+          fi
+        fi
+        exit $OVERALL_EXIT
+      else
+        set +e
+        mvn -B -ntp --settings scripts/mvn-release-settings.xml \
+          -DnvdApiKey=$NVD_API_KEY -DfailBuildOnCVSS=7 \
+          -DnvdMaxRetryCount=3 \
+          -DdataDirectory=dependency-check-data \
+          org.owasp:dependency-check-maven:aggregate 2>&1 | tee /tmp/owasp-run-$$.log
+        OWASP_EXIT=${PIPESTATUS[0]}
+        set -e
+        if [ "$OWASP_EXIT" -ne 0 ] && grep -qE "NVD Returned Status Code: [^23]|Connection (timed out|refused)|SocketTimeoutException|UnknownHostException|NvdApiException|Failed to update the NVD|Error updating the NVD" /tmp/owasp-run-$$.log; then
+          echo "ERROR: NVD API unavailable after retries. Error details:"
+          grep -E "NVD Returned Status Code|Connection (timed out|refused)|SocketTimeoutException|UnknownHostException|NvdApiException|Failed to update the NVD|Error updating the NVD" /tmp/owasp-run-$$.log | tail -5 || true
+          if [ -d "dependency-check-data" ] && [ "$(ls -A dependency-check-data 2>/dev/null)" ]; then
+            echo "INFO: Cache found. Falling back to cached NVD data (-DautoUpdate=false)..."
+            mvn -B -ntp --settings scripts/mvn-release-settings.xml \
+              -DnvdApiKey=$NVD_API_KEY -DfailBuildOnCVSS=7 \
+              -DautoUpdate=false \
+              -DdataDirectory=dependency-check-data \
+              org.owasp:dependency-check-maven:aggregate
+          else
+            echo "INFO: No NVD cache available. Running scan without NVD update (scan may be less accurate but will complete)."
+            mvn -B -ntp --settings scripts/mvn-release-settings.xml \
+              -DfailBuildOnCVSS=7 \
+              -DautoUpdate=false \
+              -DdataDirectory=dependency-check-data \
+              org.owasp:dependency-check-maven:aggregate
+          fi
+        elif [ "$OWASP_EXIT" -ne 0 ]; then
+          exit "$OWASP_EXIT"
+        fi
+      fi
+  artifacts:
+    when: always
+    paths:
+      - target/dependency-check-report.html
+      - target/dependency-check-report.json
+      - target/dependency-check-report-*.html
+      - target/dependency-check-report-*.json
+    expire_in: "10 days"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && ($SCHEDULE_TYPE == "security-scan")'
+      when: always
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: on_success
+    - if: '$CI_COMMIT_REF_PROTECTED == "true"'
+      when: on_success
+    - when: never

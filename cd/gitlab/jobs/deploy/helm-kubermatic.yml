@@ -1,0 +1,85 @@
+# Helm deployment to Kubermatic
+# Deploys applications using Helm charts to Kubermatic Kubernetes
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file: 'cd/gitlab/jobs/deploy/helm-kubermatic.yml'
+#
+#   Deploy to Dev:
+#     extends: .helm-deploy-kubermatic
+#     variables:
+#       HELM_RELEASE: "dev-my-app"
+#       HELM_CHART: "my-app-chart"
+#       HELM_STAGE: "develop-k8s"
+
+.helm-deploy-kubermatic:
+  image: adorsys/ci-helm:3.2
+  before_script:
+    - eval $(gpg-agent --daemon --quiet --allow-preset-passphrase)
+    - echo -n "${GPG_KEY}" | gpg --quiet --batch --import -
+  script:
+    - |
+      helm repo add ${HELM_REPO} https://harbor.adorsys.de/chartrepo/${HELM_REPO} \
+      --username=${HARBOR_HELM_USER} \
+      --password=${HARBOR_HELM_PASS}
+    - helm repo update
+    - helm pull ${HELM_REPO}/${HELM_CHART} --version ${HELM_CHART_VERSION} --untar
+    - cd ${HELM_CHART}
+    - mkdir -p data/${HELM_STAGE}
+    - cp -r ../data/${HELM_STAGE}/${HELM_CHART} data/${HELM_STAGE}/ || true
+    - |
+      curl -X GET "https://kaas.cloudpunks.io/api/v2/projects/hxbx4nqb87/clusters/z2zn272rbb/kubeconfig" \
+      -H "accept: application/octet-stream" -H "Authorization: Bearer ${HELM_TOKEN_KUBERMATIC}" \
+      > .kubeconfig
+    - chmod go-r .kubeconfig
+    - export KUBECONFIG=.kubeconfig
+    - |
+      helm secrets diff upgrade ${HELM_RELEASE} . \
+      --namespace=${CLUSTER_NAMESPACE} --allow-unreleased \
+      ${HELM_VALUES_PATH} \
+      ${HELM_SECRETS_PATH} || true
+    - |
+      helm secrets upgrade -i ${HELM_RELEASE} . \
+      --namespace=${CLUSTER_NAMESPACE} \
+      ${HELM_VALUES_PATH} \
+      ${HELM_SECRETS_PATH} \
+      --history-max 5 \
+      --wait --timeout=600s
+    - rm -rf ~/.kube/config
+
+.helm-deploy-kubermatic-with-postman:
+  image: adorsys/ci-helm:3.2
+  before_script:
+    - eval $(gpg-agent --daemon --quiet --allow-preset-passphrase)
+    - echo -n "${GPG_KEY}" | gpg --quiet --batch --import -
+  script:
+    - |
+      helm repo add ${HELM_REPO} https://harbor.adorsys.de/chartrepo/${HELM_REPO} \
+      --username=${HARBOR_HELM_USER} \
+      --password=${HARBOR_HELM_PASS}
+    - helm repo update
+    - helm pull ${HELM_REPO}/${HELM_CHART} --version ${HELM_CHART_VERSION} --untar
+    - cd ${HELM_CHART}
+    - mkdir -p data/${HELM_STAGE}/${HELM_CHART}
+    - tar -czvf postman.json.gz -C ../devops/data/${HELM_STAGE}/${HELM_CHART}/ .
+    - mv postman.json.gz data/${HELM_STAGE}/${HELM_CHART}/
+    - |
+      curl -X GET "https://kaas.cloudpunks.io/api/v2/projects/hxbx4nqb87/clusters/z2zn272rbb/kubeconfig" \
+      -H "accept: application/octet-stream" -H "Authorization: Bearer ${HELM_TOKEN_KUBERMATIC}" \
+      > .kubeconfig
+    - chmod go-r .kubeconfig
+    - export KUBECONFIG=.kubeconfig
+    - |
+      helm secrets diff upgrade ${HELM_RELEASE} . \
+      --namespace=${CLUSTER_NAMESPACE} --allow-unreleased \
+      ${HELM_VALUES_PATH} \
+      ${HELM_SECRETS_PATH} || true
+    - |
+      helm secrets upgrade -i ${HELM_RELEASE} . \
+      --namespace=${CLUSTER_NAMESPACE} \
+      ${HELM_VALUES_PATH} \
+      ${HELM_SECRETS_PATH} \
+      --history-max 5 \
+      --wait --timeout=600s
+    - rm -rf .kubeconfig

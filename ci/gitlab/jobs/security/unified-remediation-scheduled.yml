@@ -1,0 +1,79 @@
+# Unified Remediation — Scheduled Scan Job Template
+# Triggered when SCHEDULE_TYPE=security-scan in the pipeline schedule.
+# Runs remediation for every branch scanned by the gate jobs:
+#   1. The schedule target branch (CI_COMMIT_BRANCH)
+#   2. develop (if different from the target)
+#   3. The latest even-numbered support branch (if any, and if not already listed)
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file:
+#         - 'ci/gitlab/jobs/security/unified-remediation.yml'
+#         - 'ci/gitlab/jobs/security/unified-remediation-scheduled.yml'
+#
+#   Unified Remediation:
+#     extends: .unified-remediation-scheduled
+
+.unified-remediation-scheduled:
+  extends: .unified-remediation-base
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && $SCHEDULE_TYPE == "security-scan"'
+      when: always
+  before_script:
+    - !reference [.unified-remediation-download-scripts, before_script]
+  script:
+    - chmod +x /scripts/run-unified-remediation.sh
+    - |
+      run_remediation() {
+        local branch="$1"
+        local label="${branch//\//-}"
+        echo "=== Running remediation for branch: $branch (label: $label) ==="
+
+        # Force-clean checkout; discards pom.xml modifications left by the
+        # previous branch's remediation run (tracked files are restored).
+        # Gitignored artifact files (target/, trivy-*.json) are NOT touched.
+        git fetch origin "$branch"
+        git checkout -f "$branch"
+        git reset --hard "origin/$branch"
+        export SECURITY_BASE_BRANCH="$branch"
+
+        # Copy this branch's scan artifacts to the canonical paths that
+        # collect_reports() inside run-unified-remediation.sh expects.
+        # Clean up first so a missing report from this branch doesn't
+        # accidentally reuse the previous branch's canonical file.
+        mkdir -p target
+        rm -f target/dependency-check-report.json target/bom.json \
+              trivy-fs-report.json trivy-dockerfile-report.json 2>/dev/null || true
+        [ -f "target/dependency-check-report-${label}.json" ] && \
+          cp "target/dependency-check-report-${label}.json" target/dependency-check-report.json
+        [ -f "target/bom-${label}.json" ] && \
+          cp "target/bom-${label}.json" target/bom.json
+        [ -f "trivy-fs-report-${label}.json" ] && \
+          cp "trivy-fs-report-${label}.json" trivy-fs-report.json
+        [ -f "trivy-dockerfile-report-${label}.json" ] && \
+          cp "trivy-dockerfile-report-${label}.json" trivy-dockerfile-report.json
+
+        /scripts/run-unified-remediation.sh
+      }
+
+      # Collect unique branches (same set as the gate jobs)
+      BRANCHES=("$CI_COMMIT_BRANCH")
+      if [ "$CI_COMMIT_BRANCH" != "develop" ]; then
+        BRANCHES+=("develop")
+      fi
+      LATEST_SUPPORT=$(git ls-remote --heads origin 'support-*.x' \
+        | sed -n 's#.*refs/heads/support-\([0-9][0-9]*\)\.x#\1#p' \
+        | awk '$1 % 2 == 0' | sort -n | tail -1)
+      if [ -n "$LATEST_SUPPORT" ]; then
+        SUPPORT_BRANCH="support-${LATEST_SUPPORT}.x"
+        if [ "$CI_COMMIT_BRANCH" != "$SUPPORT_BRANCH" ] && [ "develop" != "$SUPPORT_BRANCH" ]; then
+          BRANCHES+=("$SUPPORT_BRANCH")
+        fi
+      fi
+
+      OVERALL_EXIT=0
+      for BRANCH in "${BRANCHES[@]}"; do
+        run_remediation "$BRANCH" || OVERALL_EXIT=$?
+      done
+      exit $OVERALL_EXIT

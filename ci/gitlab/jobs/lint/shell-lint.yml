@@ -1,0 +1,46 @@
+# Shell script linting for GitLab CI, backed by the shared, platform-neutral
+# scripts/ci/lint-shell.sh (the same script the GitHub composite action uses).
+#
+# This is OPT-IN and additive: existing consumers are unaffected. It downloads
+# the shared script from this templates repo at runtime, mirroring the pattern
+# already used by cd/gitlab/jobs/notify/slack-notify.yml.
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/adorsys-ci-templates'
+#       ref: 'main'
+#       file: 'ci/gitlab/jobs/lint/shell-lint.yml'
+#
+#   Lint (Shell):
+#     extends: .lint-shell
+#     variables:
+#       SHELL_LINT_PATHS: "scripts hooks"
+#
+# Variables:
+#   SHELL_LINT_PATHS   Space-separated dirs to scan (default: "scripts")
+#   SHELL_LINT_SEVERITY ShellCheck severity (default: "warning")
+#   SHELL_LINT_STRICT  "true" to fail on findings (default: warn-only)
+#   ADORSYS_CI_TEMPLATES_PROJECT URL-path of this repo (default adorsys/xs2a/adorsys-ci-templates)
+#   ADORSYS_CI_TEMPLATES_REF     Ref to fetch the shared script from (default main)
+.lint-shell:
+  image: debian:stable-slim
+  stage: Lint
+  variables:
+    SHELL_LINT_PATHS: "scripts"
+    SHELL_LINT_SEVERITY: "warning"
+    SHELL_LINT_STRICT: "false"
+    ADORSYS_CI_TEMPLATES_PROJECT: "adorsys/xs2a/adorsys-ci-templates"
+    ADORSYS_CI_TEMPLATES_REF: "main"
+  before_script:
+    - apt-get update && apt-get install -yq shellcheck curl
+  script:
+    - |
+      set -eu
+      PROJECT_ENC=$(printf '%s' "$ADORSYS_CI_TEMPLATES_PROJECT" | sed 's#/#%2F#g')
+      SCRIPT_URL="${CI_API_V4_URL}/projects/${PROJECT_ENC}/repository/files/ci%2Fgitlab%2Fscripts%2Fci%2Flint-shell.sh/raw?ref=${ADORSYS_CI_TEMPLATES_REF}"
+      curl -sSL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "$SCRIPT_URL" -o /tmp/lint-shell.sh
+      chmod +x /tmp/lint-shell.sh
+      ARGS="--severity ${SHELL_LINT_SEVERITY}"
+      [ "${SHELL_LINT_STRICT}" = "true" ] && ARGS="${ARGS} --strict"
+      # shellcheck disable=SC2086
+      /tmp/lint-shell.sh ${ARGS} -- ${SHELL_LINT_PATHS}

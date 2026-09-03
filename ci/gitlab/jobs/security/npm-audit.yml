@@ -1,0 +1,94 @@
+# npm Audit Security Scan
+# Performs vulnerability scanning on Angular/Node.js projects using npm audit.
+# Equivalent to OWASP Dependency Check but for npm ecosystems.
+#
+# See: https://docs.npmjs.com/cli/v10/commands/npm-audit
+#
+# ── USAGE ────────────────────────────────────────────────────────────────────
+# include:
+#   - project: 'adorsys/xs2a/gitlab-ci-templates'
+#     ref: 'v1.2.0'
+#     file: 'ci/gitlab/jobs/security/npm-audit.yml'
+#
+# Security (npm audit):
+#   extends: .npm-audit
+#   variables:
+#     # Comma-separated directories containing package-lock.json, relative to project root.
+#     NPM_AUDIT_DIRS: "oba-ui,tpp-ui,admin-ui,developer-portal-ui"
+#
+# ── VARIABLES ────────────────────────────────────────────────────────────────
+# NPM_AUDIT_DIRS  - Comma-separated list of directories. Default: "." (root)
+# NPM_AUDIT_LEVEL - Minimum severity to fail: low|moderate|high|critical. Default: high
+
+.npm-audit:
+  stage: Security
+  image: node:20-bookworm-slim
+  variables:
+    NPM_AUDIT_DIRS: "."
+    NPM_AUDIT_LEVEL: "high"
+  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - when: always
+  script:
+    - |
+      set -uo pipefail
+      FOUND_VULNS=0
+      IFS=',' read -ra DIRS <<< "${NPM_AUDIT_DIRS}"
+      for dir in "${DIRS[@]}"; do
+        dir=$(echo "$dir" | tr -d ' ')
+        ABS_DIR="${CI_PROJECT_DIR}/${dir}"
+        echo "═══════════════════════════════════════════"
+        echo "npm audit: ${dir}"
+        echo "═══════════════════════════════════════════"
+        if [ ! -f "${ABS_DIR}/package-lock.json" ]; then
+          echo "SKIP: no package-lock.json in ${dir}"
+          continue
+        fi
+        REPORT_NAME="npm-audit-${dir//\//-}.json"
+        # --package-lock-only avoids installing node_modules in the scan job
+        npm audit \
+          --prefix "${ABS_DIR}" \
+          --audit-level "${NPM_AUDIT_LEVEL}" \
+          --package-lock-only \
+          --json > "${CI_PROJECT_DIR}/${REPORT_NAME}" 2>&1 \
+          || { echo "Vulnerabilities >= ${NPM_AUDIT_LEVEL} found in ${dir}"; FOUND_VULNS=1; }
+        # Human-readable summary (ignore exit code; JSON artifact has the details)
+        npm audit \
+          --prefix "${ABS_DIR}" \
+          --audit-level "${NPM_AUDIT_LEVEL}" \
+          --package-lock-only \
+          || true
+      done
+      exit $FOUND_VULNS
+  artifacts:
+    when: always
+    paths:
+      - "npm-audit-*.json"
+    expire_in: "10 days"
+
+# Scheduled variant — runs as part of the security-scan schedule
+.npm-audit-scheduled:
+  extends: .npm-audit
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && ($SCHEDULE_TYPE == "security-scan")'
+      when: always
+
+# ── Strict gate variant (allow_failure: false) ───────────────────────────────
+# Gate the pipeline on develop, MR, and release branches.
+# Requires NPM_AUDIT_DIRS to be set in the consuming job.
+
+.npm-audit-strict:
+  extends: .npm-audit
+  allow_failure: false
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && ($SCHEDULE_TYPE == "security-scan")'
+      when: always
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: on_success
+    - if: '$CI_PIPELINE_SOURCE != "schedule" && $CI_COMMIT_BRANCH == "develop"'
+      when: on_success
+    - if: '$CI_PIPELINE_SOURCE != "schedule" && $CI_COMMIT_BRANCH =~ /^release-.*/'
+      when: on_success
+    - when: never

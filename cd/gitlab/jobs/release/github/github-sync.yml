@@ -1,0 +1,107 @@
+# GitHub synchronization job template
+# Syncs branches to GitHub repository
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file: 'cd/gitlab/jobs/release/github/github-sync.yml'
+#
+#   sync_to_github:
+#     extends: .github-sync
+#     variables:
+#       GITHUB_REPOSITORY: "adorsys/my-project"
+
+.github-sync:
+  image: alpine/git
+  stage: Release
+  before_script:
+    - apk add --no-cache openssh-client
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - echo "$GITHUB_DEPLOY_KEY_BASE64" | base64 -d > ~/.ssh/id_ed25519
+    - chmod 600 ~/.ssh/id_ed25519
+    - eval $(ssh-agent -s)
+    - ssh-add ~/.ssh/id_ed25519
+    - echo "$GITHUB_SSH_SERVER_FINGERPRINT" >> ~/.ssh/known_hosts
+  script:
+    - |
+      # Optional schedule gate: MONTH can be a comma-separated list like 06,12 or 04,08,12.
+      # For scheduled pipelines, run only if current month is listed.
+      if [ "$CI_PIPELINE_SOURCE" = "schedule" ] && [ -n "${MONTH:-}" ]; then
+        CURRENT_MONTH="$(echo "${CI_PIPELINE_CREATED_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" | cut -d'-' -f2)"
+        NORMALIZED_MONTHS=",$(echo "$MONTH" | tr -d ' '),"
+        if ! echo "$NORMALIZED_MONTHS" | grep -q ",$CURRENT_MONTH,"; then
+          echo "Skipping GitHub sync. Current month $CURRENT_MONTH is not in MONTH=$MONTH"
+          exit 0
+        fi
+      fi
+    - git config --global user.name "$GITHUB_USERNAME"
+    - git config --global user.email "$GITHUB_EMAIL"
+    - git remote add github git@github.com:$GITHUB_REPOSITORY.git || true
+    - |
+      # Get existing GitHub branches
+      git fetch github --prune
+      GITHUB_BRANCHES=$(git ls-remote --heads github | awk -F'/' '{print $3}')
+      # Process all support/v2support branches
+      for branch in $(git branch -r | grep -E "origin/(v2)?support-.*\.x"); do
+        branch=${branch#origin/}
+        # Check if branch exists on GitHub
+        if ! echo "$GITHUB_BRANCHES" | grep -qxF "$branch"; then
+          echo "Pushing new branch: $branch to GitHub"
+          git checkout -b "$branch" "origin/$branch"
+          git push -u github "$branch"
+        else
+          echo "Branch $branch already exists on GitHub - skipping"
+        fi
+      done
+
+.github-sync-scheduled:
+  extends: .github-sync
+  rules:
+    - if: |
+        $CI_PIPELINE_SOURCE == "schedule" &&
+        ($CI_COMMIT_REF_NAME =~ /^(v2)?support-.*\.x$/ || $CI_COMMIT_REF_NAME == "develop")
+      when: always
+
+# HTTPS-token-based GitHub sync.
+# For projects that authenticate with $GITHUB_TOKEN (personal/project access token)
+# rather than SSH deploy keys. Pushes versioned release/support branches by pattern.
+#
+# Usage:
+#   clone_to_github:
+#     extends: .github-sync-token
+#     stage: "Clone to github"
+#     needs: []
+#     rules:
+#       - if: '$CI_PIPELINE_SOURCE == "schedule"'
+#         when: never
+#       - if: '$CI_COMMIT_BRANCH =~ /release-6/ || $CI_COMMIT_BRANCH == "support-6.x"'
+#         when: always
+#       - when: never
+#     variables:
+#       GITHUB_USERNAME: adorsys
+#       GITHUB_REPOSITORY: adorsys/XS2A-Sandbox
+#       GITHUB_PROJECT_CLONE_VERSION: "6"
+#
+# Variables:
+#   GITHUB_TOKEN                   - Access token with push permission (from CI secrets)
+#   GITHUB_USERNAME                - Git author name for commits
+#   GITHUB_REPOSITORY              - Target GitHub repo, e.g. adorsys/XS2A-Sandbox
+#   GITHUB_PROJECT_CLONE_VERSION   - Version string to filter branches (e.g. "6")
+.github-sync-token:
+  image: alpine/git:latest
+  stage: Release
+  before_script: []
+  variables:
+    GITHUB_USERNAME: ""
+    GITHUB_REPOSITORY: ""
+    GITHUB_PROJECT_CLONE_VERSION: ""
+  script:
+    - git config --global user.name "$GITHUB_USERNAME"
+    - git remote add github https://$GITHUB_TOKEN@github.com/$GITHUB_REPOSITORY.git
+    - |
+      for branch in $(git branch -r | grep -E "origin/.*(release-${GITHUB_PROJECT_CLONE_VERSION}.*|support-${GITHUB_PROJECT_CLONE_VERSION}.x).*"); do
+        branch=${branch#origin/}
+        git checkout $branch
+        git push github $branch
+      done

@@ -1,0 +1,79 @@
+# Slack notification for security / quality-gate failures.
+# Sends a Slack alert when any security scan or SonarQube quality gate fails on
+# develop, MR pipelines targeting develop, or release branches.
+#
+# Required CI/CD Variable:
+#   SLACK_WEBHOOK_URL  — Slack incoming webhook URL
+#                        (configure in project CI/CD variables, masked).
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file: 'cd/gitlab/jobs/notify/slack-security-failure-notify.yml'
+#
+#   Notify Slack (security failure):
+#     extends: .slack-security-failure-notify
+#     needs:
+#       - job: "Security (owasp-dep-check - gate)"
+#         optional: true
+#       - job: "Security (cyclonedx - gate)"
+#         optional: true
+#       - job: "Trivy Filesystem Scan (gate)"
+#         optional: true
+#       - job: "Trivy Dockerfile Scan (gate)"
+#         optional: true
+#       - job: "Upload to SonarQube"
+#         optional: true
+
+.slack-security-failure-notify:
+  stage: "Notify"
+  image: alpine:latest
+  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: on_failure
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+      when: on_failure
+    - if: '$CI_COMMIT_BRANCH =~ /^release-.*/'
+      when: on_failure
+    - when: never
+  before_script:
+    - apk add --no-cache curl
+  script:
+    - |
+      if [ -z "${SLACK_WEBHOOK_URL:-}" ]; then
+        echo "SLACK_WEBHOOK_URL is not configured — skipping Slack notification."
+        exit 0
+      fi
+      BRANCH="${CI_COMMIT_BRANCH:-${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME:-unknown}}"
+      TARGET=""
+      if [ "${CI_PIPELINE_SOURCE}" = "merge_request_event" ]; then
+        TARGET=" → ${CI_MERGE_REQUEST_TARGET_BRANCH_NAME:-develop}"
+      fi
+      PAYLOAD=$(printf '{
+        "text": ":rotating_light: *Security / Quality Gate FAILED — pipeline blocked*",
+        "attachments": [{
+          "color": "danger",
+          "fields": [
+            {"title": "Project",   "value": "%s",   "short": true},
+            {"title": "Branch",    "value": "%s%s", "short": true},
+            {"title": "Source",    "value": "%s",   "short": true},
+            {"title": "Author",    "value": "%s",   "short": true},
+            {"title": "Commit",    "value": "%s",   "short": false},
+            {"title": "Pipeline",  "value": "%s",   "short": false}
+          ]
+        }]
+      }' \
+        "${CI_PROJECT_NAME}" \
+        "${BRANCH}" "${TARGET}" \
+        "${CI_PIPELINE_SOURCE}" \
+        "${GITLAB_USER_NAME:-CI}" \
+        "${CI_COMMIT_TITLE}" \
+        "${CI_PIPELINE_URL}")
+      curl -s -X POST "${SLACK_WEBHOOK_URL}" \
+        -H 'Content-type: application/json' \
+        --data "${PAYLOAD}" >/dev/null \
+        && echo "Slack notification sent." \
+        || echo "WARNING: Slack notification failed (non-fatal)."

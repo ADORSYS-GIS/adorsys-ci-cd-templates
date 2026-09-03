@@ -1,0 +1,56 @@
+# Dockerfile linting with Hadolint
+# Validates Dockerfiles using Hadolint best practices
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file: 'ci/gitlab/jobs/lint/dockerfile-lint.yml'
+#
+#   Lint Dockerfiles:
+#     extends: .lint-dockerfiles
+#     script:
+#       - docker run --rm -i hadolint/hadolint < Dockerfile
+#       - docker run --rm -i hadolint/hadolint < app/Dockerfile
+
+.lint-dockerfiles-base:
+  image: docker
+  stage: Lint
+  services:
+    - name: docker:27.3.1-dind
+      alias: docker
+      command: ["--host=tcp://0.0.0.0:2375", "--tls=false"]
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_DRIVER: overlay2
+  before_script:
+    - echo "${ADORSYS_REGISTRY_PASSWORD}" | docker login -u "${ADORSYS_REGISTRY_USER}" --password-stdin gitlab-registry.adorsys.de
+
+.lint-dockerfiles:
+  extends: .lint-dockerfiles-base
+  script:
+    - echo "Run Dockerfile lint"
+    - docker run --rm -i hadolint/hadolint < Dockerfile
+
+.lint-dockerfiles-multi:
+  extends: .lint-dockerfiles-base
+  script:
+    - |
+      for dockerfile in $(find . -name "Dockerfile" -not -path "*/target/*" 2>/dev/null); do
+        echo "Linting $dockerfile"
+        docker run --rm -i hadolint/hadolint < "$dockerfile" || exit 1
+      done
+
+# Makefile-based variant: delegates to a make target that controls which
+# Dockerfiles are linted (e.g. specific files, ordered, with custom rules).
+# Use instead of .lint-dockerfiles-multi for projects that use Makefiles.
+#
+# Variables:
+#   DOCKERFILE_MAKE_TARGET — make target to invoke. Default: lint-dockerfiles
+.lint-dockerfiles-make:
+  extends: .lint-dockerfiles-base
+  variables:
+    DOCKERFILE_MAKE_TARGET: "lint-dockerfiles"
+  script:
+    - apk add --no-cache make
+    - make ${DOCKERFILE_MAKE_TARGET}

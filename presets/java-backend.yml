@@ -1,0 +1,99 @@
+# Java Backend Project Preset
+# Pre-configured CI pipeline for Java/Maven backend projects
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file: 'presets/java-backend.yml'
+#
+#   # Override project-specific settings
+#   variables:
+#     DOCKER_IMAGE_NAME: "my-app"
+#     DOCKERHUB_NAMESPACE: "adorsys/xs2a/my-project"
+
+include:
+  - project: 'adorsys/xs2a/gitlab-ci-templates'
+    file:
+      - 'ci/gitlab/services/docker-dind.yml'
+      - 'ci/gitlab/variables/java-variables.yml'
+      - 'ci/gitlab/variables/maven-variables.yml'
+      - 'ci/gitlab/variables/docker-variables.yml'
+      - 'ci/gitlab/jobs/lint/ci-file-lint.yml'
+      - 'ci/gitlab/jobs/lint/dockerfile-lint.yml'
+      - 'ci/gitlab/jobs/lint/yaml-json-xml-lint.yml'
+      - 'ci/gitlab/jobs/lint/pmd-cpd.yml'
+      - 'ci/gitlab/jobs/security/owasp-dependency-check.yml'
+      - 'ci/gitlab/jobs/security/renovate.yml'
+      - 'ci/gitlab/jobs/build/java-maven.yml'
+      - 'ci/gitlab/jobs/test/java-tests.yml'
+      - 'ci/gitlab/jobs/security/sonarqube.yml'
+      - 'cd/gitlab/jobs/release/maven/maven-release.yml'
+
+stages:
+  - Lint
+  - Compile
+  - Test
+  - Security
+  - Package
+  - Release
+
+variables:
+  MAVEN_REPO_PATH: ".m2/repository"
+  MAVEN_OPTS: "-Dmaven.repo.local=${CI_PROJECT_DIR}/${MAVEN_REPO_PATH}"
+  DOCKERHUB_REGISTRY: "gitlab-registry.adorsys.de"
+
+# Lint Jobs
+Lint (CI file):
+  extends: .lint-ci-file
+  rules: !reference [.pipeline-feature-branches-only, rules]
+
+Lint (YAML, JSON, XML):
+  extends: .lint-yaml-json-xml
+  rules: !reference [.pipeline-feature-branches-only, rules]
+
+Lint (Dockerfiles):
+  extends: .lint-dockerfiles
+  tags:
+    - aws
+  rules: !reference [.pipeline-feature-branches-only, rules]
+
+Lint (PMD/CPD):
+  extends: .lint-pmd-cpd
+  rules: !reference [.pipeline-feature-branches-only, rules]
+
+Security (OWASP Dependency Check):
+  extends: .owasp-dependency-check
+  rules: !reference [.pipeline-always-except-schedules, rules]
+
+# Build Job
+Build:
+  extends: .build-java-maven-with-artifacts
+  rules: !reference [.pipeline-always-except-schedules, rules]
+
+# Test Jobs
+Test (Unit):
+  extends: .test-java-unit
+  rules: !reference [.pipeline-always-except-schedules, rules]
+
+Test (Integration):
+  extends: .test-java-integration
+  tags:
+    - aws
+  rules: !reference [.pipeline-always-except-schedules, rules]
+
+Test (Javadoc):
+  extends: .test-javadoc
+  rules: !reference [.pipeline-always-except-schedules, rules]
+
+# Package Jobs
+SonarQube:
+  extends: .sonarqube-security-gate
+  needs:
+    - job: "Security (OWASP Dependency Check)"
+
+# Release Jobs
+Release (develop):
+  extends: .maven-release-snapshot
+
+Release (tags):
+  extends: .maven-release-tags

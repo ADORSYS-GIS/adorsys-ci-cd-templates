@@ -1,0 +1,211 @@
+# Trivy Security Scanner CI Job Templates (push-triggered)
+# Scans Maven dependencies (filesystem mode) and Dockerfiles (config mode)
+# for HIGH and CRITICAL vulnerabilities using Aqua Trivy.
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file: 'ci/gitlab/jobs/security/trivy.yml'
+#
+#   Trivy Filesystem Scan:
+#     extends: .trivy-fs
+#
+#   Trivy Container Image Scan (after docker build):
+#     extends: .trivy-image
+#     variables:
+#       TRIVY_IMAGE: "my-registry/my-app:latest"
+#
+# For scheduled scans, also include:
+#       file: 'ci/gitlab/jobs/security/trivy-scheduled.yml'
+
+.trivy-fs:
+  stage: Security
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - when: on_success
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""]
+  variables:
+    TRIVY_NO_PROGRESS: "true"
+    TRIVY_SEVERITY: "HIGH,CRITICAL"
+    TRIVY_EXIT_CODE: "0"
+    TRIVY_FORMAT: "table"
+    TRIVY_TIMEOUT: "15m0s"
+    TRIVY_SKIP_FILES: "**/pom.xml"
+  script:
+    - trivy fs --severity ${TRIVY_SEVERITY} --scanners vuln --skip-files "${TRIVY_SKIP_FILES}" --timeout ${TRIVY_TIMEOUT} --format json --output trivy-fs-report.json --exit-code 0 .
+    - trivy fs --severity ${TRIVY_SEVERITY} --scanners vuln --skip-files "${TRIVY_SKIP_FILES}" --timeout ${TRIVY_TIMEOUT} --format ${TRIVY_FORMAT} --exit-code 0 .
+    - trivy fs --severity ${TRIVY_SEVERITY} --scanners vuln --skip-files "${TRIVY_SKIP_FILES}" --timeout ${TRIVY_TIMEOUT} --format sarif --output trivy-fs-report.sarif .
+  artifacts:
+    when: always
+    paths:
+      - trivy-fs-report.json
+      - trivy-fs-report.sarif
+    expire_in: "30 days"
+  allow_failure: true
+
+.trivy-dockerfile:
+  stage: Security
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - when: on_success
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""]
+  variables:
+    TRIVY_NO_PROGRESS: "true"
+    TRIVY_SEVERITY: "HIGH,CRITICAL"
+  script:
+    - trivy config --severity ${TRIVY_SEVERITY} --format table --exit-code 0 .
+    - trivy config --severity ${TRIVY_SEVERITY} --format json --output trivy-dockerfile-report.json .
+  artifacts:
+    when: always
+    paths:
+      - trivy-dockerfile-report.json
+    expire_in: "30 days"
+  allow_failure: true
+
+.trivy-image:
+  stage: Security
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - when: on_success
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""]
+  variables:
+    TRIVY_NO_PROGRESS: "true"
+    TRIVY_SEVERITY: "HIGH,CRITICAL"
+    TRIVY_IMAGE: ""
+  script:
+    - trivy image --severity ${TRIVY_SEVERITY} --format table --exit-code 0 ${TRIVY_IMAGE}
+    - trivy image --severity ${TRIVY_SEVERITY} --format json --output trivy-image-report.json ${TRIVY_IMAGE}
+  artifacts:
+    when: always
+    paths:
+      - trivy-image-report.json
+    expire_in: "30 days"
+  allow_failure: true
+
+# ── Strict gate variants (allow_failure: false) ──────────────────────────────
+# Run alongside soft-fail variants. Gate the pipeline on develop, MR, and
+# release branches — HIGH/CRITICAL findings block the pipeline.
+# JSON/SARIF artifact reports are produced before the hard exit-code check.
+
+.trivy-fs-strict:
+  extends: .trivy-fs
+  allow_failure: false
+  script:
+    - |
+      scan_trivy_fs() {
+        local label="$1"
+        trivy fs --severity ${TRIVY_SEVERITY} --scanners vuln \
+          --skip-files "${TRIVY_SKIP_FILES}" --timeout ${TRIVY_TIMEOUT} \
+          --format json  --output "trivy-fs-report-${label}.json"  --exit-code 0 .
+        trivy fs --severity ${TRIVY_SEVERITY} --scanners vuln \
+          --skip-files "${TRIVY_SKIP_FILES}" --timeout ${TRIVY_TIMEOUT} \
+          --format sarif --output "trivy-fs-report-${label}.sarif" --exit-code 0 .
+        trivy fs --severity ${TRIVY_SEVERITY} --scanners vuln \
+          --skip-files "${TRIVY_SKIP_FILES}" --timeout ${TRIVY_TIMEOUT} \
+          --format table --exit-code 1 .
+      }
+      if [ "$CI_PIPELINE_SOURCE" = "schedule" ]; then
+        apk add --no-cache git --quiet
+        OVERALL_EXIT=0
+        TARGET_LABEL="${CI_COMMIT_BRANCH//\//-}"
+        scan_trivy_fs "$TARGET_LABEL" || OVERALL_EXIT=1
+        if [ "$CI_COMMIT_BRANCH" != "develop" ]; then
+          git fetch origin develop
+          git checkout develop
+          scan_trivy_fs "develop" || OVERALL_EXIT=1
+        fi
+        LATEST_SUPPORT=$(git ls-remote --heads origin 'support-*.x' \
+          | sed -n 's#.*refs/heads/support-\([0-9][0-9]*\)\.x#\1#p' \
+          | awk '$1 % 2 == 0' | sort -n | tail -1)
+        if [ -n "$LATEST_SUPPORT" ]; then
+          SUPPORT_BRANCH="support-${LATEST_SUPPORT}.x"
+          if [ "$CI_COMMIT_BRANCH" != "$SUPPORT_BRANCH" ]; then
+            git fetch origin "$SUPPORT_BRANCH"
+            git checkout "$SUPPORT_BRANCH"
+            scan_trivy_fs "${SUPPORT_BRANCH//\//-}" || OVERALL_EXIT=1
+          fi
+        fi
+        exit $OVERALL_EXIT
+      else
+        trivy fs --severity ${TRIVY_SEVERITY} --scanners vuln --skip-files "${TRIVY_SKIP_FILES}" --timeout ${TRIVY_TIMEOUT} --format json  --output trivy-fs-report.json      --exit-code 0 .
+        trivy fs --severity ${TRIVY_SEVERITY} --scanners vuln --skip-files "${TRIVY_SKIP_FILES}" --timeout ${TRIVY_TIMEOUT} --format sarif --output trivy-fs-report.sarif --exit-code 0 .
+        trivy fs --severity ${TRIVY_SEVERITY} --scanners vuln --skip-files "${TRIVY_SKIP_FILES}" --timeout ${TRIVY_TIMEOUT} --format table                                --exit-code 1 .
+      fi
+  artifacts:
+    when: always
+    paths:
+      - trivy-fs-report.json
+      - trivy-fs-report.sarif
+      - trivy-fs-report-*.json
+      - trivy-fs-report-*.sarif
+    expire_in: "30 days"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && ($SCHEDULE_TYPE == "security-scan")'
+      when: always
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: on_success
+    - if: '$CI_COMMIT_REF_PROTECTED == "true"'
+      when: on_success
+    - when: never
+
+.trivy-dockerfile-strict:
+  extends: .trivy-dockerfile
+  allow_failure: false
+  script:
+    - |
+      scan_trivy_dockerfile() {
+        local label="$1"
+        trivy config --severity ${TRIVY_SEVERITY} \
+          --format json --output "trivy-dockerfile-report-${label}.json" --exit-code 0 .
+        trivy config --severity ${TRIVY_SEVERITY} \
+          --format table --exit-code 1 .
+      }
+      if [ "$CI_PIPELINE_SOURCE" = "schedule" ]; then
+        apk add --no-cache git --quiet
+        OVERALL_EXIT=0
+        TARGET_LABEL="${CI_COMMIT_BRANCH//\//-}"
+        scan_trivy_dockerfile "$TARGET_LABEL" || OVERALL_EXIT=1
+        if [ "$CI_COMMIT_BRANCH" != "develop" ]; then
+          git fetch origin develop
+          git checkout develop
+          scan_trivy_dockerfile "develop" || OVERALL_EXIT=1
+        fi
+        LATEST_SUPPORT=$(git ls-remote --heads origin 'support-*.x' \
+          | sed -n 's#.*refs/heads/support-\([0-9][0-9]*\)\.x#\1#p' \
+          | awk '$1 % 2 == 0' | sort -n | tail -1)
+        if [ -n "$LATEST_SUPPORT" ]; then
+          SUPPORT_BRANCH="support-${LATEST_SUPPORT}.x"
+          if [ "$CI_COMMIT_BRANCH" != "$SUPPORT_BRANCH" ]; then
+            git fetch origin "$SUPPORT_BRANCH"
+            git checkout "$SUPPORT_BRANCH"
+            scan_trivy_dockerfile "${SUPPORT_BRANCH//\//-}" || OVERALL_EXIT=1
+          fi
+        fi
+        exit $OVERALL_EXIT
+      else
+        trivy config --severity ${TRIVY_SEVERITY} --format json --output trivy-dockerfile-report.json --exit-code 0 .
+        trivy config --severity ${TRIVY_SEVERITY} --format table                                      --exit-code 1 .
+      fi
+  artifacts:
+    when: always
+    paths:
+      - trivy-dockerfile-report.json
+      - trivy-dockerfile-report-*.json
+    expire_in: "30 days"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && ($SCHEDULE_TYPE == "security-scan")'
+      when: always
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: on_success
+    - if: '$CI_COMMIT_REF_PROTECTED == "true"'
+      when: on_success
+    - when: never

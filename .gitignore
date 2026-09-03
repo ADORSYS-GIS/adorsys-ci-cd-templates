@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Shell scripts - no artifacts to ignore
+# The scripts/ directory contains source files that should be committed
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Security scan artifacts (local runs only)
+dependency-check-data/
+security-reports/
+trivy-fs-report.json
+trivy-fs-report.sarif
+trivy-dockerfile-report.json

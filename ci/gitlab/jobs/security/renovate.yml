@@ -1,0 +1,122 @@
+# ============================================================================
+# Renovate Bot CI Job Template
+# ============================================================================
+# Runs automated security dependency updates using Renovate Bot in standalone
+# CI mode. Reads project configuration from renovate.json in the repo root.
+#
+# Design intent:
+#   - Only HIGH and CRITICAL CVEs trigger an MR (controlled via renovate.json)
+#   - All qualifying fixes are grouped into ONE MR per run
+#   - Branch naming follows the project convention (set in renovate.json)
+#   - Every new Dockerfile or pom.xml added to the repo is auto-discovered
+#
+# See: https://docs.renovatebot.com/self-hosted-configuration/
+#
+# ── USAGE ────────────────────────────────────────────────────────────────────
+# include:
+#   - project: 'adorsys/xs2a/gitlab-ci-templates'
+#     ref: 'v1.2.7'
+#     file: 'ci/gitlab/jobs/security/renovate.yml'
+#
+# Renovate Update:
+#   extends: .renovate-update
+#
+# ── REQUIRED CI/CD VARIABLES ─────────────────────────────────────────────────
+# Settings > CI/CD > Variables (group- or project-level):
+#   RENOVATE_GITLAB_TOKEN  - GitLab PAT: api, read_user, write_repository scopes
+#
+# ── OPTIONAL CI/CD VARIABLES ─────────────────────────────────────────────────
+#   RENOVATE_GITHUB_TOKEN  - GitHub PAT (read-only, public_repo scope).
+#                            Provides access to GitHub Security Advisories (GHSA)
+#                            for richer vulnerability data alongside OSV.
+#
+# ── PROJECT CONFIG ───────────────────────────────────────────────────────────
+# Add a renovate.json at the repo root. Security-only example:
+#
+#   {
+#     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+#     "extends": ["config:recommended"],
+#     "enabled": false,
+#     "osvVulnerabilityAlerts": true,
+#     "vulnerabilityAlerts": {
+#       "enabled": true,
+#       "minimumSeverity": "high",
+#       "groupName": "security-updates",
+#       "branchName": "bugFix/issue-0001-security-updates-{{{baseBranch}}}",
+#       "commitMessagePrefix": "fix(deps):",
+#       "labels": ["dependencies", "security"],
+#       "addLabels": ["renovate"],
+#       "separateMajorMinor": false
+#     },
+#     "branchPrefix": "bugFix/issue-0001-",
+#     "baseBranchPatterns": ["develop"],
+#     "enabledManagers": ["maven", "dockerfile"],
+#     "packageRules": [
+#       { "matchPackageNames": ["de.adorsys.internal:*"], "enabled": false }
+#     ]
+#   }
+
+.renovate-update:
+  stage: Security
+  image:
+    name: ghcr.io/renovatebot/renovate:latest
+    entrypoint: [""]
+  variables:
+    # Kubernetes executor sizing — same values that were validated with the
+    # dependabot job on this runner; do not change without testing first.
+    KUBERNETES_CPU_REQUEST: "50m"
+    KUBERNETES_CPU_LIMIT: "1000m"
+    KUBERNETES_MEMORY_REQUEST: "128Mi"
+    KUBERNETES_MEMORY_LIMIT: "1Gi"
+    # ── Renovate core settings ────────────────────────────────────────────────
+    RENOVATE_PLATFORM: "gitlab"
+    RENOVATE_ENDPOINT: "${CI_SERVER_URL}/api/v4"
+    # RENOVATE_GITLAB_TOKEN must be set as a protected CI/CD variable.
+    RENOVATE_TOKEN: "${RENOVATE_GITLAB_TOKEN}"
+    # Scan only the current project. Never autodiscover across the instance.
+    RENOVATE_AUTODISCOVER: "false"
+    RENOVATE_REPOSITORIES: "${CI_PROJECT_PATH}"
+    # renovate.json is committed to the repo — no onboarding MR needed.
+    RENOVATE_ONBOARDING: "false"
+    # Do not fail if renovate.json is missing; fall back to safe defaults.
+    # "ignored" = skip fetching repo config via GitLab API; use only the
+    # config file below (the one checked out by the CI runner for this branch).
+    RENOVATE_REQUIRE_CONFIG: "ignored"
+    # Use the renovate.json from the branch that triggered this pipeline.
+    # Renovate normally fetches repo config via GitLab API (always from develop).
+    # Pointing RENOVATE_CONFIG_FILE to the workspace file makes the checked-out
+    # branch's config authoritative, regardless of what is on any other branch.
+    RENOVATE_CONFIG_FILE: "$CI_PROJECT_DIR/renovate.json"
+    # Dry-run mode: Renovate scans and logs but creates NO branches or MRs.
+    # Security MR creation is handled exclusively by the Unified Remediation job.
+    RENOVATE_DRY_RUN: "full"
+    # GitHub token provides GHSA vulnerability advisory data.
+    # Without it Renovate falls back to OSV only (still very good coverage).
+    GITHUB_COM_TOKEN: "${RENOVATE_GITHUB_TOKEN}"
+    LOG_LEVEL: "info"
+  before_script:
+    - |
+      # Compute the same branch set as the gate jobs:
+      # schedule target branch, develop, and the latest even-numbered support branch.
+      RENOVATE_BRANCHES="$CI_COMMIT_BRANCH"
+      if [ "$CI_COMMIT_BRANCH" != "develop" ]; then
+        RENOVATE_BRANCHES="$RENOVATE_BRANCHES,develop"
+      fi
+      LATEST_SUPPORT=$(git ls-remote --heads origin 'support-*.x' \
+        | sed -n 's#.*refs/heads/support-\([0-9][0-9]*\)\.x#\1#p' \
+        | awk '$1 % 2 == 0' | sort -n | tail -1)
+      if [ -n "$LATEST_SUPPORT" ]; then
+        SUPPORT_BRANCH="support-${LATEST_SUPPORT}.x"
+        if [ "$CI_COMMIT_BRANCH" != "$SUPPORT_BRANCH" ] && [ "develop" != "$SUPPORT_BRANCH" ]; then
+          RENOVATE_BRANCHES="$RENOVATE_BRANCHES,$SUPPORT_BRANCH"
+        fi
+      fi
+      export RENOVATE_BASE_BRANCHES="$RENOVATE_BRANCHES"
+      echo "Renovate will scan branches: $RENOVATE_BASE_BRANCHES"
+  script:
+    - renovate
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && $SCHEDULE_TYPE == "security-scan"'
+      when: always
+  allow_failure: true
+  timeout: 1h

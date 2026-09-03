@@ -1,0 +1,206 @@
+# Java Maven build job template
+# Compiles Java projects using a project-provided Maven image
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file: 'ci/gitlab/jobs/build/java-maven.yml'
+#
+#   Build Java:
+#     extends: .build-java-maven
+#     variables:
+#       JAVA_MAVEN_IMAGE: "maven:3.9-eclipse-temurin-21"
+
+.build-java-maven-base:
+  image: "${JAVA_MAVEN_IMAGE}"
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
+  variables:
+    MAVEN_REPO_PATH: ".m2/repository"
+    MAVEN_OPTS: "-Dmaven.repo.local=${CI_PROJECT_DIR}/${MAVEN_REPO_PATH}"
+  cache:
+    key: "maven-cache-$CI_COMMIT_REF_SLUG"
+    paths:
+      - "${MAVEN_REPO_PATH}"
+    policy: pull-push
+  before_script:
+    - 'test -n "${JAVA_MAVEN_IMAGE}" || (echo "JAVA_MAVEN_IMAGE must be set in project .gitlab-ci.yml variables" && exit 1)'
+    - java -version
+    - mvn -version
+
+.build-java-maven:
+  extends: .build-java-maven-base
+  stage: Compile
+  script:
+    - mvn -ntp -DskipITs -DskipTests -Dci.build.number=Build\:${CI_PIPELINE_ID} clean install
+
+.build-java-maven-with-artifacts:
+  extends: .build-java-maven-base
+  stage: Compile
+  script:
+    - mvn -ntp -DskipITs -DskipTests -Dci.build.number=Build\:${CI_PIPELINE_ID} clean install
+  artifacts:
+    paths:
+      - "**/target/classes"
+      - "**/target/*"
+    name: "${CI_PROJECT_NAME}-${CI_BUILD_REF_NAME#*v}"
+    expire_in: "1 day"
+
+.build-java-maven-version:
+  extends: .build-java-maven-base
+  stage: Compile
+  script:
+    - mvn -DskipTests clean install -Dci.build.number=Build\:${CI_PIPELINE_ID}
+
+.build-java-maven-settings:
+  extends: .build-java-maven-base
+  stage: Compile
+  variables:
+    MAVEN_SETTINGS_PATH: "scripts/mvn-release-settings.xml"
+  script:
+    - mvn -ntp -DskipITs -DskipTests --settings ${MAVEN_SETTINGS_PATH} -Dci.build.number=Build\:${CI_PIPELINE_ID} clean install
+
+# Mixin: generates ~/.m2/settings.xml at runtime from CI_JOB_TOKEN.
+# Use for projects that authenticate to private Maven registries via deploy
+# tokens rather than a committed settings file (e.g. qwac-assessor).
+#
+# List this LAST in the `extends` array so its before_script wins:
+#
+#   Compile Java:
+#     extends:
+#       - .build-java-maven-base
+#       - .maven-ci-token-before-script
+#     script:
+#       - mvn -DskipTests install
+#
+.maven-ci-token-before-script:
+  before_script:
+    - mkdir -p ~/.m2
+    - |
+      cat > ~/.m2/settings.xml <<XML
+      <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+                xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
+                http://maven.apache.org/xsd/settings-1.0.0.xsd">
+        <servers>
+          <server>
+            <id>gitlab-maven</id>
+            <configuration>
+              <httpHeaders>
+                <property>
+                  <name>Deploy-Token</name>
+                  <value>${CI_JOB_TOKEN}</value>
+                </property>
+              </httpHeaders>
+            </configuration>
+          </server>
+        </servers>
+      </settings>
+      XML
+    - 'test -n "${JAVA_MAVEN_IMAGE}" || (echo "JAVA_MAVEN_IMAGE must be set in project .gitlab-ci.yml variables" && exit 1)'
+    - java -version
+    - mvn -version
+    - java -XX:+PrintFlagsFinal -version 2>&1 | grep -Ei "maxheapsize|maxram" || true
+# ── Reusable pipeline-trigger rule sets ──────────────────────────────────────
+# Reference these in project jobs to replace deprecated only/except keywords.
+# Using rules: ensures consistent behaviour across branch, MR, and tag pipelines.
+#
+# Usage in project .gitlab-ci.yml:
+#   My Job:
+#     extends: .some-template
+#     rules: !reference [.<rule-name>, rules]
+#
+# Requires develop / master / release-* to be Protected Branches in GitLab
+# (Settings → Repository → Protected Branches).
+
+# Replacement for: except: [schedules]
+# Runs on every push, MR, and tag pipeline — skips scheduled pipelines.
+.pipeline-always-except-schedules:
+  rules:
+    - if: '$MAVEN_RELEASE_ROLLBACK == "true"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - when: on_success
+
+# Replacement for: except: [schedules, develop, master]
+# Runs on unprotected branch pushes and MR pipelines from feature branches.
+# Also runs on release pipelines started with MAVEN_RELEASE_RUN=true so
+# lint jobs stay visible when a release is created from a protected branch.
+# Skips protected branches (develop, master, release-*) and schedules.
+.pipeline-feature-branches-only:
+  rules:
+    - if: '$MAVEN_RELEASE_ROLLBACK == "true"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - if: '$MAVEN_RELEASE_RUN == "true"'
+      when: on_success
+    - if: '$CI_COMMIT_REF_PROTECTED == "true"'
+      when: never
+    - when: on_success
+
+# Replacement for: only: [develop] / only: [develop] except: [schedules]
+# Runs only on the develop branch — skips schedules, tags, and all other branches.
+.pipeline-develop-only:
+  rules:
+    - if: '$MAVEN_RELEASE_ROLLBACK == "true"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+      when: on_success
+    - when: never
+
+# Replacement for: only: [master]
+# Runs only on the master branch.
+.pipeline-master-only:
+  rules:
+    - if: '$MAVEN_RELEASE_ROLLBACK == "true"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH == "master"'
+      when: on_success
+    - when: never
+
+# Replacement for: only: [tags] / only: [tags] except: [schedules]
+# Runs only on tag pipelines — skips branches and schedules.
+.pipeline-tags-only:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - if: '$CI_COMMIT_TAG'
+      when: on_success
+    - when: never
+
+# For: strict gate security jobs (allow_failure: false)
+# Runs on MR pipelines and commits to any protected/default branch.
+# Skips feature branches, schedules, and non-protected branches.
+.pipeline-default-branches-only:
+  rules:
+    - if: '$MAVEN_RELEASE_ROLLBACK == "true"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: on_success
+    - if: '$CI_COMMIT_REF_PROTECTED == "true"'
+      when: on_success
+    - when: never
+
+# For: strict gate security jobs that also run on security-scan schedules.
+# On schedule: scans the target branch (CI_COMMIT_BRANCH), develop, and the
+# latest even-numbered support branch.
+# On push/MR: same as .pipeline-default-branches-only.
+.pipeline-default-branches-and-security-scan:
+  rules:
+    - if: '$MAVEN_RELEASE_ROLLBACK == "true"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && ($SCHEDULE_TYPE == "security-scan")'
+      when: always
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: on_success
+    - if: '$CI_COMMIT_REF_PROTECTED == "true"'
+      when: on_success
+    - when: never

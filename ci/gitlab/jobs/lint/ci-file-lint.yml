@@ -1,0 +1,18 @@
+# GitLab CI file linting
+# Validates .gitlab-ci.yml files using yamllint
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file: 'ci/gitlab/jobs/lint/ci-file-lint.yml'
+#
+#   Lint CI File:
+#     extends: .lint-ci-file
+
+.lint-ci-file:
+  image: debian:stable-slim
+  stage: Lint
+  script:
+    - apt-get update && apt-get install yamllint python3-pkg-resources -yq
+    - echo "Run GitLab CI file lint"
+    - yamllint -d relaxed .gitlab-ci.yml

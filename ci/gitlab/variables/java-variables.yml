@@ -1,0 +1,22 @@
+# Java/SDKMan common variables
+# Include this template to set up consistent Java environment variables
+#
+# Usage:
+#   include:
+#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#       file: 'ci/gitlab/variables/java-variables.yml'
+
+.variables-java:
+  variables:
+    JAVA_TOOL_OPTIONS: "-XX:+UnlockExperimentalVMOptions -XX:MaxRAM=3G -XX:MaxRAMPercentage=33.0"
+
+.variables-java-build:
+  variables:
+    JAVA_TOOL_OPTIONS: "-Djavax.net.ssl.trustStorePassword=changeit -XX:MaxRAM=3G"
+
+.variables-java-sdkman:
+  before_script:
+    - source "$SDKMAN_DIR/bin/sdkman-init.sh"
+    - 'test -n "${JAVA_VERSION}" || (echo "JAVA_VERSION must be set in project .gitlab-ci.yml variables" && exit 1)'
+    - sdk install java ${JAVA_VERSION} || true
+    - sdk use java ${JAVA_VERSION}
