@@ -1,9 +1,6 @@
-# SonarQube analysis job template for Angular, JavaScript, and TypeScript.
-# Standard Experience uses BLOCKER and CRITICAL issue severities. HIGH is an
-# impact level used by Multi-Quality Rule mode, not a Standard Experience API
-# severity.
+# SonarQube analysis job template for projects using SonarScanner CLI.
 
-.sonarqube-angular:
+.sonarqube-cli:
   image:
     name: "sonarsource/sonar-scanner-cli:latest"
     entrypoint: [""]
@@ -15,14 +12,14 @@
     SONAR_EXCLUSIONS: "**/node_modules/**,**/dist/**,**/build/**,**/coverage/**,**/target/**"
     SONAR_JAVASCRIPT_LCOV_REPORT_PATHS: ""
   cache:
-    key: "sonar-angular-cache-$CI_COMMIT_REF_SLUG"
+    key: "sonar-cli-cache-$CI_COMMIT_REF_SLUG"
     paths:
       - "${SONAR_USER_HOME}/cache"
     policy: pull-push
   before_script:
     - ': "${SONAR_HOST_URL:?SONAR_HOST_URL must be configured as a GitLab CI variable}"'
     - ': "${SONAR_TOKEN:?SONAR_TOKEN must be configured as a masked GitLab CI variable}"'
-    - ': "${SONAR_PROJECT_KEY:?SONAR_PROJECT_KEY must be configured for the frontend project}"'
+    - ': "${SONAR_PROJECT_KEY:?SONAR_PROJECT_KEY must be configured for the project}"'
   script:
     - |
       set -eu
@@ -148,7 +145,7 @@
         echo "ERROR: SonarQube found ${message}."
         exit 1
       fi
-      echo "SonarQube Angular scan passed: no unresolved blocker/critical/major bugs or vulnerabilities."
+      echo "SonarQube scan passed: no unresolved blocker/critical/major bugs or vulnerabilities."
   allow_failure: false
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
