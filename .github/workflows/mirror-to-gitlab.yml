@@ -26,15 +26,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Fetch main and tags from GitHub
+      - name: Fetch tags from GitHub
         run: |
-          git fetch origin '+refs/heads/main:refs/heads/main'
           git fetch origin '+refs/tags/*:refs/tags/*' --prune
 
       - name: Push mirror to GitLab
         env:
           GITLAB_TOKEN: ${{ secrets.XS2A_GITLAB_SYNC_TOKEN }}
         run: |
+          git remote remove gitlab 2>/dev/null || true
           git remote add gitlab "https://oauth2:${GITLAB_TOKEN}@git.adorsys.de/adorsys/xs2a/gitlab-ci-templates.git"
-          git push gitlab '+refs/heads/main:refs/heads/main'
+          git push gitlab 'HEAD:refs/heads/main'
           git push --prune gitlab '+refs/tags/*:refs/tags/*'
