@@ -27,7 +27,7 @@ include:
       - 'ci/gitlab/jobs/build/java-maven.yml'
       - 'ci/gitlab/jobs/test/java-tests.yml'
       - 'ci/gitlab/jobs/package/sonarqube.yml'
-      - 'cd/gitlab/jobs/release/maven-release.yml'
+      - 'cd/gitlab/jobs/release/maven/maven-release.yml'
 
 stages:
   - Lint
