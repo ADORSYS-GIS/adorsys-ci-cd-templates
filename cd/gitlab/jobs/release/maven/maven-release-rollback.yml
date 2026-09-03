@@ -32,7 +32,8 @@ include:
     - 'test -n "${JAVA_MAVEN_IMAGE}" || (echo "JAVA_MAVEN_IMAGE must be set in project .gitlab-ci.yml variables" && exit 1)'
     - apt-get update && apt-get install -yq git curl jq
   script:
-    - git config user.email "${GITLAB_USER_EMAIL:-ci-release-bot@adorsys.de}"
+    - 'test -n "${GITLAB_USER_EMAIL}" || (echo "GITLAB_USER_EMAIL must be set in project .gitlab-ci.yml variables" && exit 1)'
+    - git config user.email "${GITLAB_USER_EMAIL}"
     - git config user.name "${GITLAB_USER_NAME:-ci-release-bot}"
     - git remote set-url origin "https://oauth2:${GITLAB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
     - !reference [.maven-release-rollback-init, script]

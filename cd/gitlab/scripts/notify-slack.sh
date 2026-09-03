@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Slack Pipeline Notification Script
 # Called by the .slack_notify CI job template.
+# Optional: GITLAB_PAGES_DOMAIN (e.g. group.pages.example.com) - set at
+# project/group CI/CD variable level to enable the vulnerability-report link.
 set -euo pipefail
 
 log() { echo "[notify-slack] $1"; }
@@ -51,8 +53,8 @@ send_notification() {
     local curl="$CI_PROJECT_URL/-/commit/$CI_COMMIT_SHA"
 
     local vuln_btn=""
-    if [ "$has_vuln" = "true" ] && [ -n "$owasp_id" ]; then
-        vuln_btn=$(jq -nc --arg url "https://adorsys.pages.adorsys.de/-/${pages_path}/-/jobs/${owasp_id}/artifacts/target/dependency-check-report.html" \
+    if [ "$has_vuln" = "true" ] && [ -n "$owasp_id" ] && [ -n "${GITLAB_PAGES_DOMAIN:-}" ]; then
+        vuln_btn=$(jq -nc --arg url "https://${GITLAB_PAGES_DOMAIN}/-/${pages_path}/-/jobs/${owasp_id}/artifacts/target/dependency-check-report.html" \
             '{type:"button",text:{type:"plain_text",text:":warning: Vulnerability Report",emoji:true},url:$url}')
     fi
 

@@ -36,7 +36,7 @@ stages:
 variables:
   MAVEN_REPO_PATH: ".m2/repository"
   MAVEN_OPTS: "-Dmaven.repo.local=${CI_PROJECT_DIR}/${MAVEN_REPO_PATH}"
-  DOCKERHUB_REGISTRY: "gitlab-registry.adorsys.de"
+  # Set DOCKER_REGISTRY in your project/group CI/CD variables if you use docker-build-push.
 
 # ==================== LINT STAGE ====================
 

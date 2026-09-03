@@ -23,11 +23,11 @@
     DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""
     DOCKER_DRIVER: overlay2
-    DOCKER_REGISTRY: "gitlab-registry.adorsys.de"
+    DOCKER_REGISTRY: ""
     # Backward-compatible alias used by existing projects
-    DOCKERHUB_REGISTRY: "gitlab-registry.adorsys.de"
+    DOCKERHUB_REGISTRY: ""
   before_script:
-    - echo "${ADORSYS_REGISTRY_PASSWORD}" | docker login -u "${ADORSYS_REGISTRY_USER}" --password-stdin "${DOCKER_REGISTRY:-$DOCKERHUB_REGISTRY}"
+    - echo "${ADORSYS_REGISTRY_PASSWORD}" | docker login -u "${ADORSYS_REGISTRY_USER}" --password-stdin "${DOCKER_REGISTRY}"
 
 # Legacy variant using docker:dind (unversioned) with the classic tcp socket.
 # Use for projects that relied on the old unversioned docker:dind image.
@@ -39,15 +39,15 @@
 
 .docker-login-registry:
   before_script:
-    - echo "${ADORSYS_REGISTRY_PASSWORD}" | docker login -u "${ADORSYS_REGISTRY_USER}" --password-stdin "${DOCKER_REGISTRY:-$DOCKERHUB_REGISTRY}"
+    - echo "${ADORSYS_REGISTRY_PASSWORD}" | docker login -u "${ADORSYS_REGISTRY_USER}" --password-stdin "${DOCKER_REGISTRY}"
 
 .docker-build-push-single:
   extends: .docker-build-push-base
   stage: Package
   script:
-    - docker build -t "${DOCKER_REGISTRY:-$DOCKERHUB_REGISTRY}/${DOCKERHUB_NAMESPACE}/${DOCKER_IMAGE_NAME}:${DOCKER_TAG}" .
-    - docker push "${DOCKER_REGISTRY:-$DOCKERHUB_REGISTRY}/${DOCKERHUB_NAMESPACE}/${DOCKER_IMAGE_NAME}:${DOCKER_TAG}"
-    - docker logout "${DOCKER_REGISTRY:-$DOCKERHUB_REGISTRY}"
+    - docker build -t "${DOCKER_REGISTRY}/${DOCKERHUB_NAMESPACE}/${DOCKER_IMAGE_NAME}:${DOCKER_TAG}" .
+    - docker push "${DOCKER_REGISTRY}/${DOCKERHUB_NAMESPACE}/${DOCKER_IMAGE_NAME}:${DOCKER_TAG}"
+    - docker logout "${DOCKER_REGISTRY}"
 
 .docker-build-push-develop:
   extends: .docker-build-push-base
@@ -61,10 +61,10 @@
   script:
     - |
       for image_name in ${DOCKER_IMAGE_NAMES}; do
-        docker build -t "${DOCKER_REGISTRY:-$DOCKERHUB_REGISTRY}/${DOCKERHUB_NAMESPACE}/${image_name}:${DOCKER_TAG}" "${image_name}"
-        docker push "${DOCKER_REGISTRY:-$DOCKERHUB_REGISTRY}/${DOCKERHUB_NAMESPACE}/${image_name}:${DOCKER_TAG}"
+        docker build -t "${DOCKER_REGISTRY}/${DOCKERHUB_NAMESPACE}/${image_name}:${DOCKER_TAG}" "${image_name}"
+        docker push "${DOCKER_REGISTRY}/${DOCKERHUB_NAMESPACE}/${image_name}:${DOCKER_TAG}"
       done
-    - docker logout "${DOCKER_REGISTRY:-$DOCKERHUB_REGISTRY}"
+    - docker logout "${DOCKER_REGISTRY}"
 
 .docker-build-push-master:
   extends: .docker-build-push-base
@@ -78,10 +78,10 @@
   script:
     - |
       for image_name in ${DOCKER_IMAGE_NAMES}; do
-        docker build -t "${DOCKER_REGISTRY:-$DOCKERHUB_REGISTRY}/${DOCKERHUB_NAMESPACE}/${image_name}:${DOCKER_TAG}" "${image_name}"
-        docker push "${DOCKER_REGISTRY:-$DOCKERHUB_REGISTRY}/${DOCKERHUB_NAMESPACE}/${image_name}:${DOCKER_TAG}"
+        docker build -t "${DOCKER_REGISTRY}/${DOCKERHUB_NAMESPACE}/${image_name}:${DOCKER_TAG}" "${image_name}"
+        docker push "${DOCKER_REGISTRY}/${DOCKERHUB_NAMESPACE}/${image_name}:${DOCKER_TAG}"
       done
-    - docker logout "${DOCKER_REGISTRY:-$DOCKERHUB_REGISTRY}"
+    - docker logout "${DOCKER_REGISTRY}"
 
 .docker-build-push-tags:
   extends: .docker-build-push-base
@@ -95,7 +95,7 @@
   script:
     - |
       for image_name in ${DOCKER_IMAGE_NAMES}; do
-        docker build -t "${DOCKER_REGISTRY:-$DOCKERHUB_REGISTRY}/${DOCKERHUB_NAMESPACE}/${image_name}:${DOCKER_TAG}" "${image_name}"
-        docker push "${DOCKER_REGISTRY:-$DOCKERHUB_REGISTRY}/${DOCKERHUB_NAMESPACE}/${image_name}:${DOCKER_TAG}"
+        docker build -t "${DOCKER_REGISTRY}/${DOCKERHUB_NAMESPACE}/${image_name}:${DOCKER_TAG}" "${image_name}"
+        docker push "${DOCKER_REGISTRY}/${DOCKERHUB_NAMESPACE}/${image_name}:${DOCKER_TAG}"
       done
-    - docker logout "${DOCKER_REGISTRY:-$DOCKERHUB_REGISTRY}"
+    - docker logout "${DOCKER_REGISTRY}"

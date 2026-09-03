@@ -251,7 +251,8 @@
 .maven-release-plugin-post-release-branches:
   script:
     - |
-      git config user.email "${GITLAB_USER_EMAIL:-ci-release-bot@adorsys.de}"
+      : "${GITLAB_USER_EMAIL:?Set GITLAB_USER_EMAIL as a project/group CI/CD variable}"
+      git config user.email "${GITLAB_USER_EMAIL}"
       git config user.name "${GITLAB_USER_NAME:-ci-release-bot}"
       git remote set-url origin "https://oauth2:${GITLAB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
       

@@ -14,7 +14,11 @@ fi
 PROJECT="${CI_PROJECT_PATH:-${CI_PROJECT_NAME:-unknown}}"
 BRANCH="${SECURITY_BASE_BRANCH:-develop}"
 TS=$(date -u +"%Y-%m-%d %H:%M UTC")
-API_URL="${GITLAB_API:-https://git.adorsys.de}/api/v4"
+if [ -z "${GITLAB_API:-}" ]; then
+    log "GITLAB_API not set (define it as a project/group CI/CD variable); skipping notification"
+    exit 0
+fi
+API_URL="${GITLAB_API}/api/v4"
 
 TOTAL_CVES="0"; HIGH_COUNT="0"; CRITICAL_COUNT="0"; ACTIONABLE="0"; FIXES_APPLIED="0"
 

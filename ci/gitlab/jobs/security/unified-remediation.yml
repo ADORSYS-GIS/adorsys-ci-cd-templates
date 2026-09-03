@@ -5,6 +5,11 @@
 # Required CI/CD Variables:
 #   GITLAB_TOKEN  - GitLab PAT with api scope (for MR creation/augmentation)
 #   CI_JOB_TOKEN  - Automatically provided by GitLab CI (for script download)
+#   GITLAB_API    - Base URL of this GitLab instance (e.g. https://git.example.com)
+#                   Set this at the project or group CI/CD variable settings level,
+#                   not in this file, so it stays out of version control.
+#   ADORSYS_CI_TEMPLATES_PROJECT - URL-path of this repo (e.g. group/subgroup/adorsys-ci-cd-templates)
+#                   Also set at the project or group CI/CD variable settings level.
 #
 # Optional Variables:
 #   GITLAB_CI_TEMPLATES_REF - Override the auto-detected tag (e.g. "v1.3.5")
@@ -53,27 +58,36 @@
   allow_failure: true
 
 .unified-remediation-download-scripts:
+  variables:
+    GITLAB_API: ""
+    ADORSYS_CI_TEMPLATES_PROJECT: ""
   before_script:
     - apt-get update && apt-get install -y git jq curl nodejs npm --no-install-recommends
     - pip install --quiet requests
     - mkdir -p /scripts
     - |
+      set -eu
+      : "${GITLAB_API:?Set GITLAB_API as a project/group CI/CD variable}"
+      : "${ADORSYS_CI_TEMPLATES_PROJECT:?Set ADORSYS_CI_TEMPLATES_PROJECT as a project/group CI/CD variable}"
+      PROJECT_ENC=$(printf '%s' "$ADORSYS_CI_TEMPLATES_PROJECT" | sed 's#/#%2F#g')
+      export PROJECT_ENC
+    - |
       if [ -z "$GITLAB_CI_TEMPLATES_REF" ]; then
         GITLAB_CI_TEMPLATES_REF=$(curl -sL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
-          "${GITLAB_API:-https://git.adorsys.de}/api/v4/projects/adorsys%2Fxs2a%2Fadorsys-ci-cd-templates/repository/tags?order_by=version&sort=desc&per_page=1" \
+          "${GITLAB_API}/api/v4/projects/${PROJECT_ENC}/repository/tags?order_by=version&sort=desc&per_page=1" \
           | jq -r '.[0].name')
-        echo "Auto-detected gitlab-ci-templates ref: ${GITLAB_CI_TEMPLATES_REF}"
+        echo "Auto-detected adorsys-ci-cd-templates ref: ${GITLAB_CI_TEMPLATES_REF}"
       else
-        echo "Using configured gitlab-ci-templates ref: ${GITLAB_CI_TEMPLATES_REF}"
+        echo "Using configured adorsys-ci-cd-templates ref: ${GITLAB_CI_TEMPLATES_REF}"
       fi
       if [ -z "$GITLAB_CI_TEMPLATES_REF" ]; then
-        echo "ERROR: Could not determine gitlab-ci-templates version tag."
+        echo "ERROR: Could not determine adorsys-ci-cd-templates version tag."
         echo "Set GITLAB_CI_TEMPLATES_REF manually or check CI_JOB_TOKEN permissions."
         exit 1
       fi
       export GITLAB_CI_TEMPLATES_REF
     - |
-      TEMPLATES_BASE_URL="https://git.adorsys.de/api/v4/projects/adorsys%2Fxs2a%2Fadorsys-ci-cd-templates/repository/files"
+      TEMPLATES_BASE_URL="${GITLAB_API}/api/v4/projects/${PROJECT_ENC}/repository/files"
       echo "Downloading aggregator script @ ${GITLAB_CI_TEMPLATES_REF}..."
       curl -sL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
         "${TEMPLATES_BASE_URL}/ci%2Fgitlab%2Fscripts%2Funified-security-aggregator.py/raw?ref=${GITLAB_CI_TEMPLATES_REF}" \

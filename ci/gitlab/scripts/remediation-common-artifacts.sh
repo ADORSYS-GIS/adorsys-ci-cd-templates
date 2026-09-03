@@ -54,7 +54,7 @@ build_artifact_links() {
     local PROJECT_URL="$1" OWASP_JOB_ID="$2" TRIVY_FS_JOB_ID="$3" TRIVY_DF_JOB_ID="$4" CYCLONEDX_JOB_ID="$5" PIPELINE_ID="$6"
     local TRIVY_FS_JOB_NAME="${7:-}" TRIVY_DF_JOB_NAME="${8:-}"
     # Compute GitLab Pages artifact base URL:
-    #   https://git.adorsys.de/adorsys/xs2a/foo  ->  https://adorsys.pages.adorsys.de/-/xs2a/foo/-/jobs
+    #   https://git.example.com/group/subgroup/foo  ->  https://group.pages.example.com/-/subgroup/foo/-/jobs
     local _HOST _DOMAIN _PROJ_PATH _NS _SUBPATH _PAGES_BASE
     _HOST=$(echo "$PROJECT_URL" | sed 's|https://||' | cut -d'/' -f1)
     _DOMAIN="${_HOST#*.}"

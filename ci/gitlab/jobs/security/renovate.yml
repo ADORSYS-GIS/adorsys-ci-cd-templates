@@ -23,7 +23,7 @@
 #
 # ── REQUIRED CI/CD VARIABLES ─────────────────────────────────────────────────
 # Settings > CI/CD > Variables (group- or project-level):
-#   RENOVATE_GITLAB_TOKEN  - GitLab PAT: api, read_user, write_repository scopes
+#   GITLAB_TOKEN  - GitLab PAT: api, read_user, write_repository scopes
 #
 # ── OPTIONAL CI/CD VARIABLES ─────────────────────────────────────────────────
 #   RENOVATE_GITHUB_TOKEN  - GitHub PAT (read-only, public_repo scope).
@@ -71,8 +71,8 @@
     # ── Renovate core settings ────────────────────────────────────────────────
     RENOVATE_PLATFORM: "gitlab"
     RENOVATE_ENDPOINT: "${CI_SERVER_URL}/api/v4"
-    # RENOVATE_GITLAB_TOKEN must be set as a protected CI/CD variable.
-    RENOVATE_TOKEN: "${RENOVATE_GITLAB_TOKEN}"
+    # GITLAB_TOKEN must be set as a protected CI/CD variable.
+    RENOVATE_TOKEN: "${GITLAB_TOKEN}"
     # Scan only the current project. Never autodiscover across the instance.
     RENOVATE_AUTODISCOVER: "false"
     RENOVATE_REPOSITORIES: "${CI_PROJECT_PATH}"

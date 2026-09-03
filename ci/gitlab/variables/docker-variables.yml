@@ -9,10 +9,9 @@
 # Override in your .gitlab-ci.yml:
 #   variables:
 #     DOCKERHUB_NAMESPACE: "adorsys/xs2a/my-project"
+#     DOCKER_REGISTRY: "registry.example.com"
 
 .variables-docker:
   variables:
-    DOCKER_REGISTRY: "gitlab-registry.adorsys.de"
-    # Backward-compatible alias used by existing pipelines
-    DOCKERHUB_REGISTRY: "gitlab-registry.adorsys.de"
+    DOCKER_REGISTRY: ""
     DOCKER_TAG: "$CI_COMMIT_REF_SLUG"
