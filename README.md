@@ -31,5 +31,4 @@ projects.
 
 ## Documentation
 
-Detailed usage instructions and architecture documentation will be published
-separately as this project matures.
+- [SonarQube scan setup and usage](docs/sonarqube.md)

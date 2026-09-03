@@ -1,0 +1,43 @@
+# SonarQube analysis job templates for non-Maven projects.
+# Include sonarqube-cli.yml before this file. Each job uses SonarScanner CLI,
+# which selects language analyzers from the source file extensions.
+
+.sonarqube-rust:
+  extends: .sonarqube-cli
+  variables:
+    SONAR_EXCLUSIONS: "**/target/**,**/coverage/**"
+
+.sonarqube-go:
+  extends: .sonarqube-cli
+  variables:
+    SONAR_EXCLUSIONS: "**/vendor/**,**/coverage/**"
+
+.sonarqube-javascript-typescript:
+  extends: .sonarqube-cli
+  variables:
+    SONAR_EXCLUSIONS: "**/node_modules/**,**/dist/**,**/build/**,**/coverage/**"
+
+.sonarqube-powershell:
+  extends: .sonarqube-cli
+  variables:
+    SONAR_EXCLUSIONS: "**/coverage/**,**/out/**,**/bin/**"
+
+.sonarqube-shell:
+  extends: .sonarqube-cli
+  variables:
+    SONAR_EXCLUSIONS: "**/coverage/**,**/dist/**,**/build/**"
+
+.sonarqube-python:
+  extends: .sonarqube-cli
+  variables:
+    SONAR_EXCLUSIONS: "**/.venv/**,**/venv/**,**/__pycache__/**,**/.pytest_cache/**,**/.mypy_cache/**,**/build/**,**/dist/**,**/coverage/**"
+
+.sonarqube-yaml:
+  extends: .sonarqube-cli
+  variables:
+    SONAR_EXCLUSIONS: "**/node_modules/**,**/dist/**,**/build/**,**/coverage/**"
+
+.sonarqube-terraform:
+  extends: .sonarqube-cli
+  variables:
+    SONAR_EXCLUSIONS: "**/.terraform/**,**/*.tfstate,**/*.tfstate.*,**/coverage/**"
