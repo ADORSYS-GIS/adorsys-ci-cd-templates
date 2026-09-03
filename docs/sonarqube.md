@@ -12,7 +12,7 @@ scanner can identify branches and merge requests correctly.
 
 ## GitLab
 
-Include both templates, then extend the alias for the project language:
+Include the CLI and language templates, then extend the alias for the project language:
 
 ```yaml
 include:
@@ -28,14 +28,18 @@ SonarQube:
 
 | Language/files | Alias |
 |---|---|
-| Rust | `.sonarqube-rust` |
-| Go | `.sonarqube-go` |
-| JavaScript/TypeScript | `.sonarqube-javascript-typescript` |
-| PowerShell | `.sonarqube-powershell` |
-| Shell | `.sonarqube-shell` |
-| Python | `.sonarqube-python` |
+| Java (`.java`) | `.sonarqube-java` |
+| Angular (`.ts`, `.html`, `.css`, `.scss`) | `.sonarqube-angular` |
+| Rust (`.rs`) | `.sonarqube-rust` |
+| Go (`.go`) | `.sonarqube-go` |
+| JavaScript/TypeScript (`.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`) | `.sonarqube-javascript-typescript` |
+| PowerShell (`.ps1`, `.psm1`, `.psd1`) | `.sonarqube-powershell` |
+| Shell (`.sh`, `.bash`, `.zsh`) | `.sonarqube-shell` |
+| Python (`.py`) | `.sonarqube-python` |
 | YAML (`.yml`, `.yaml`) | `.sonarqube-yaml` |
-| Terraform | `.sonarqube-terraform` |
+| Terraform (`.tf`, `.tfvars`) | `.sonarqube-terraform` |
+
+Java projects must also include `ci/gitlab/jobs/security/sonarqube.yml`.
 
 Override defaults when required:
 
