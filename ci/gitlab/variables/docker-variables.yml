@@ -1,18 +1,7 @@
 # Docker common variables
 # Include this template to set up Docker registry variables
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'ci/gitlab/variables/docker-variables.yml'
-#
-# Override in your .gitlab-ci.yml:
-#   variables:
-#     DOCKERHUB_NAMESPACE: "adorsys/xs2a/my-project"
 
 .variables-docker:
   variables:
-    DOCKER_REGISTRY: "gitlab-registry.adorsys.de"
-    # Backward-compatible alias used by existing pipelines
-    DOCKERHUB_REGISTRY: "gitlab-registry.adorsys.de"
+    DOCKER_REGISTRY: ""
     DOCKER_TAG: "$CI_COMMIT_REF_SLUG"

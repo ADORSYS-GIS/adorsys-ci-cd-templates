@@ -1,13 +1,5 @@
 # YAML, JSON, XML linting
 # Validates configuration files for syntax and formatting
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'ci/gitlab/jobs/lint/yaml-json-xml-lint.yml'
-#
-#   Lint Config Files:
-#     extends: .lint-yaml-json-xml
 
 .lint-yaml-json-xml:
   image: debian:stable-slim

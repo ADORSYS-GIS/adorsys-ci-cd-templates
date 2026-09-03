@@ -1,29 +1,22 @@
 # Full Stack Project Preset (JavaBackend + Node.js Frontend)
 # Pre-configured CI pipeline for projects with both backend and frontend components
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'presets/full-stack.yml'
 
 include:
-  - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-    file:
-      - 'ci/gitlab/services/docker-dind.yml'
-      - 'ci/gitlab/variables/java-variables.yml'
-      - 'ci/gitlab/variables/maven-variables.yml'
-      - 'ci/gitlab/variables/docker-variables.yml'
-      - 'ci/gitlab/jobs/lint/ci-file-lint.yml'
-      - 'ci/gitlab/jobs/lint/dockerfile-lint.yml'
-      - 'ci/gitlab/jobs/lint/yaml-json-xml-lint.yml'
-      - 'ci/gitlab/jobs/lint/pmd-cpd.yml'
-      - 'ci/gitlab/jobs/security/owasp-dependency-check.yml'
-      - 'ci/gitlab/jobs/security/renovate.yml'
-      - 'ci/gitlab/jobs/security/npm-audit.yml'
-      - 'ci/gitlab/jobs/build/java-maven.yml'
-      - 'ci/gitlab/jobs/test/java-tests.yml'
-      - 'ci/gitlab/jobs/security/sonarqube.yml'
-      - 'cd/gitlab/jobs/release/maven/maven-release.yml'
+  - local: 'ci/gitlab/services/docker-dind.yml'
+  - local: 'ci/gitlab/variables/java-variables.yml'
+  - local: 'ci/gitlab/variables/maven-variables.yml'
+  - local: 'ci/gitlab/variables/docker-variables.yml'
+  - local: 'ci/gitlab/jobs/lint/ci-file-lint.yml'
+  - local: 'ci/gitlab/jobs/lint/dockerfile-lint.yml'
+  - local: 'ci/gitlab/jobs/lint/yaml-json-xml-lint.yml'
+  - local: 'ci/gitlab/jobs/lint/pmd-cpd.yml'
+  - local: 'ci/gitlab/jobs/security/owasp-dependency-check.yml'
+  - local: 'ci/gitlab/jobs/security/renovate.yml'
+  - local: 'ci/gitlab/jobs/security/npm-audit.yml'
+  - local: 'ci/gitlab/jobs/build/java-maven.yml'
+  - local: 'ci/gitlab/jobs/test/java-tests.yml'
+  - local: 'ci/gitlab/jobs/security/sonarqube.yml'
+  - local: 'cd/gitlab/jobs/release/maven/maven-release.yml'
 
 stages:
   - Lint
@@ -37,7 +30,7 @@ variables:
   NODE_VERSION: "18.19.1"
   MAVEN_REPO_PATH: ".m2/repository"
   MAVEN_OPTS: "-Dmaven.repo.local=${CI_PROJECT_DIR}/${MAVEN_REPO_PATH}"
-  DOCKERHUB_REGISTRY: "gitlab-registry.adorsys.de"
+  # Set DOCKER_REGISTRY in your project/group CI/CD variables if you use docker-build-push.
 
 # ==================== LINT STAGE ====================
 

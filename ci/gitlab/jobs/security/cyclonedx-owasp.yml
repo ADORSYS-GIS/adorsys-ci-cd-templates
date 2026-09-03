@@ -1,26 +1,9 @@
 # CycloneDX BOM + OWASP Dependency-Check (push-triggered jobs)
 # Generates a Software Bill of Materials (SBOM) using CycloneDX Maven plugin,
 # then runs OWASP Dependency-Check for CVE coverage (CVSS >= 7.0 = fail).
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       ref: 'v1.3.1'
-#       file: 'ci/gitlab/jobs/security/cyclonedx-owasp.yml'
-#
-#   CycloneDX + OWASP Scan:
-#     extends: .cyclonedx-owasp
-#
-# For scheduled scans, also include:
-#       file: 'ci/gitlab/jobs/security/cyclonedx-owasp-scheduled.yml'
-#
-# Required CI/CD Variables:
-#   NVD_API_KEY - NVD API key for faster OWASP downloads
 
-# Strict (allow_failure: false) variants are in the sub-file included below.
 include:
-  - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-    file: 'ci/gitlab/jobs/security/cyclonedx-owasp-strict.yml'
+  - local: 'ci/gitlab/jobs/security/cyclonedx-owasp-strict.yml'
 
 .cyclonedx-owasp-variables:
   variables:

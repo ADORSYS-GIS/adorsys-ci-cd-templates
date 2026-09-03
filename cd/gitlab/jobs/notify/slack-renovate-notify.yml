@@ -1,15 +1,5 @@
 # Slack Notification Template — Renovate Bot Activity
 # Reports Renovate update status and the single grouped security MR to Slack.
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'cd/gitlab/jobs/notify/slack-renovate-notify.yml'
-#
-#   Notify Slack (Renovate):
-#     extends: .slack_notify_renovate
-#     variables:
-#       RENOVATE_BRANCH_PREFIX: "bugFix/issue-0001-"
 
 .slack_notify_renovate:
   stage: "Notify"
@@ -17,6 +7,8 @@
   allow_failure: true
   variables:
     RENOVATE_BRANCH_PREFIX: "renovate/"
+    ADORSYS_CI_TEMPLATES_PROJECT: ""
+    ADORSYS_CI_TEMPLATES_REF: "main"
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule" && $SCHEDULE_TYPE == "renovate-update"'
       when: always
@@ -24,7 +16,9 @@
     - apk add --no-cache curl jq bash
   script:
     - |
-      SCRIPT_URL="${CI_API_V4_URL}/projects/adorsys%2Fxs2a%2Fadorsys-ci-cd-templates/repository/files/cd%2Fgitlab%2Fscripts%2Fnotify-renovate.sh/raw?ref=main"
+      : "${ADORSYS_CI_TEMPLATES_PROJECT:?Set ADORSYS_CI_TEMPLATES_PROJECT as a project/group CI/CD variable}"
+      PROJECT_ENC=$(printf '%s' "$ADORSYS_CI_TEMPLATES_PROJECT" | sed 's#/#%2F#g')
+      SCRIPT_URL="${CI_API_V4_URL}/projects/${PROJECT_ENC}/repository/files/cd%2Fgitlab%2Fscripts%2Fnotify-renovate.sh/raw?ref=${ADORSYS_CI_TEMPLATES_REF}"
       curl -sL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${SCRIPT_URL}" -o /tmp/notify-renovate.sh || {
         echo "ERROR: Failed to download notify-renovate.sh"
         exit 1

@@ -1,10 +1,5 @@
 # Java/SDKMan common variables
 # Include this template to set up consistent Java environment variables
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'ci/gitlab/variables/java-variables.yml'
 
 .variables-java:
   variables:

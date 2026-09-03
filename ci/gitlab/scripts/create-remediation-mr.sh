@@ -22,7 +22,7 @@ done
 [[ -z "$BRANCH_PREFIX" || -z "$TARGET_BRANCH" ]] && { echo "Error: --branch-prefix and --target-branch are required"; exit 1; }
 validate_base_branch "$TARGET_BRANCH"
 
-GITLAB_HOST="${GITLAB_HOST:-git.adorsys.de}"
+[[ -z "${GITLAB_HOST:-}" ]] && { echo "Error: GITLAB_HOST not set (define it as a project/group CI/CD variable)"; exit 1; }
 GITLAB_API="https://${GITLAB_HOST}/api/v4"
 [[ -z "$GITLAB_TOKEN" ]] && { echo "Error: GITLAB_TOKEN not set"; exit 1; }
 [[ -z "$CI_PROJECT_ID" ]] && { echo "Error: CI_PROJECT_ID not set"; exit 1; }
@@ -42,8 +42,9 @@ echo "Branch: $BRANCH_NAME | Target: $TARGET_BRANCH | CVEs: $CVE_COUNT | Fixable
 [[ "$CVE_COUNT" -eq 0 ]] && { echo "No CVEs found. No MR needed."; exit 0; }
 [[ "$DRY_RUN" == "true" ]] && { echo "[DRY RUN] Would create MR: fix(deps): Security updates for $CVE_COUNT CVE(s)"; exit 0; }
 
-git config --global user.email "renovate@adorsys.de"
-git config --global user.name "Security Bot"
+[[ -z "${GITLAB_USER_EMAIL:-}" ]] && { echo "Error: GITLAB_USER_EMAIL not set (define it as a project/group CI/CD variable)"; exit 1; }
+git config --global user.email "$GITLAB_USER_EMAIL"
+git config --global user.name "${GITLAB_USER_NAME:-Security Bot}"
 
 # Detect locally modified files from the aggregator's --apply-fixes step
 CHANGED_POM=$(git diff --name-only HEAD -- '*/pom.xml' 'pom.xml' 2>/dev/null || true)

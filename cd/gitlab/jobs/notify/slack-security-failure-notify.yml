@@ -1,29 +1,6 @@
 # Slack notification for security / quality-gate failures.
 # Sends a Slack alert when any security scan or SonarQube quality gate fails on
 # develop, MR pipelines targeting develop, or release branches.
-#
-# Required CI/CD Variable:
-#   SLACK_WEBHOOK_URL  — Slack incoming webhook URL
-#                        (configure in project CI/CD variables, masked).
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'cd/gitlab/jobs/notify/slack-security-failure-notify.yml'
-#
-#   Notify Slack (security failure):
-#     extends: .slack-security-failure-notify
-#     needs:
-#       - job: "Security (owasp-dep-check - gate)"
-#         optional: true
-#       - job: "Security (cyclonedx - gate)"
-#         optional: true
-#       - job: "Trivy Filesystem Scan (gate)"
-#         optional: true
-#       - job: "Trivy Dockerfile Scan (gate)"
-#         optional: true
-#       - job: "Upload to SonarQube"
-#         optional: true
 
 .slack-security-failure-notify:
   stage: "Notify"

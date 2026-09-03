@@ -111,7 +111,7 @@ fi
 # ── Artifact links ────────────────────────────────────────────────────────────
 PIPELINE_URL="${CI_PROJECT_URL}/-/pipelines/${CI_PIPELINE_ID}"
 # Compute GitLab Pages artifact base URL:
-#   https://git.adorsys.de/adorsys/xs2a/foo  ->  https://adorsys.pages.adorsys.de/-/xs2a/foo/-/jobs
+#   https://git.example.com/group/subgroup/foo  ->  https://group.pages.example.com/-/subgroup/foo/-/jobs
 _DOMAIN="${GITLAB_HOST#*.}"
 _NS=$(echo "$CI_PROJECT_PATH" | cut -d'/' -f1)
 _SUBPATH=$(echo "$CI_PROJECT_PATH" | cut -d'/' -f2-)

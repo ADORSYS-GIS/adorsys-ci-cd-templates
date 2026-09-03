@@ -1,16 +1,5 @@
 # Dockerfile linting with Hadolint
 # Validates Dockerfiles using Hadolint best practices
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'ci/gitlab/jobs/lint/dockerfile-lint.yml'
-#
-#   Lint Dockerfiles:
-#     extends: .lint-dockerfiles
-#     script:
-#       - docker run --rm -i hadolint/hadolint < Dockerfile
-#       - docker run --rm -i hadolint/hadolint < app/Dockerfile
 
 .lint-dockerfiles-base:
   image: docker
@@ -23,8 +12,9 @@
     DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""
     DOCKER_DRIVER: overlay2
+    DOCKER_REGISTRY: ""
   before_script:
-    - echo "${ADORSYS_REGISTRY_PASSWORD}" | docker login -u "${ADORSYS_REGISTRY_USER}" --password-stdin gitlab-registry.adorsys.de
+    - echo "${ADORSYS_REGISTRY_PASSWORD}" | docker login -u "${ADORSYS_REGISTRY_USER}" --password-stdin "${DOCKER_REGISTRY}"
 
 .lint-dockerfiles:
   extends: .lint-dockerfiles-base

@@ -6,16 +6,12 @@
 #   registries. Trigger via MAVEN_RELEASE_ROLLBACK=true. The script is composed
 #   from ordered fragments so the job remains self-contained.
 
-# Sub-files are fetched from the default branch of gitlab-ci-templates at include time.
+
 include:
-  - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-    file: 'cd/gitlab/jobs/release/maven/maven-release-rollback-init.yml'
-  - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-    file: 'cd/gitlab/jobs/release/maven/maven-release-rollback-helpers-detection.yml'
-  - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-    file: 'cd/gitlab/jobs/release/maven/maven-release-rollback-preflight-force-push.yml'
-  - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-    file: 'cd/gitlab/jobs/release/maven/maven-release-rollback-cleanup-summary.yml'
+  - local: 'cd/gitlab/jobs/release/maven/maven-release-rollback-init.yml'
+  - local: 'cd/gitlab/jobs/release/maven/maven-release-rollback-helpers-detection.yml'
+  - local: 'cd/gitlab/jobs/release/maven/maven-release-rollback-preflight-force-push.yml'
+  - local: 'cd/gitlab/jobs/release/maven/maven-release-rollback-cleanup-summary.yml'
 
 .maven-release-rollback-base:
   image: "${JAVA_MAVEN_IMAGE}"
@@ -32,7 +28,8 @@ include:
     - 'test -n "${JAVA_MAVEN_IMAGE}" || (echo "JAVA_MAVEN_IMAGE must be set in project .gitlab-ci.yml variables" && exit 1)'
     - apt-get update && apt-get install -yq git curl jq
   script:
-    - git config user.email "${GITLAB_USER_EMAIL:-ci-release-bot@adorsys.de}"
+    - 'test -n "${GITLAB_USER_EMAIL}" || (echo "GITLAB_USER_EMAIL must be set in project .gitlab-ci.yml variables" && exit 1)'
+    - git config user.email "${GITLAB_USER_EMAIL}"
     - git config user.name "${GITLAB_USER_NAME:-ci-release-bot}"
     - git remote set-url origin "https://oauth2:${GITLAB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
     - !reference [.maven-release-rollback-init, script]

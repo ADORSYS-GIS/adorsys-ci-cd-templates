@@ -1,16 +1,5 @@
 # ASCII Doc job templates
 # Builds project documentation pages using arc42 tools image.
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'ci/gitlab/jobs/test/asciidoc.yml'
-#
-#   Test (ASCII Doc):
-#     extends: .test-asciidoc-pages
-#
-#   ASCII Doc (version from pom.xml):
-#     extends: .test-asciidoc-pages-from-pom
 
 .test-asciidoc-pages:
   image: adorsys/arc42-tools

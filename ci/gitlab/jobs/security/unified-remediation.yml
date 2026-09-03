@@ -1,29 +1,6 @@
 # Unified Security Remediation CI Job Templates
 # Aggregates findings from OWASP, Trivy, CycloneDX, and Renovate; resolves
 # fix versions; and either augments an existing Renovate MR or creates a new one.
-#
-# Required CI/CD Variables:
-#   GITLAB_TOKEN  - GitLab PAT with api scope (for MR creation/augmentation)
-#   CI_JOB_TOKEN  - Automatically provided by GitLab CI (for script download)
-#
-# Optional Variables:
-#   GITLAB_CI_TEMPLATES_REF - Override the auto-detected tag (e.g. "v1.3.5")
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'ci/gitlab/jobs/security/unified-remediation.yml'
-#
-#   Unified Remediation (push):
-#     extends:
-#       - .unified-remediation-base
-#       - .unified-remediation-download-scripts
-#
-# For scheduled scans (target + develop + support branches), also include:
-#       file: 'ci/gitlab/jobs/security/unified-remediation-scheduled.yml'
-#
-#   Unified Remediation:
-#     extends: .unified-remediation-scheduled
 
 .unified-remediation-base:
   image: python:3.11-slim
@@ -53,27 +30,36 @@
   allow_failure: true
 
 .unified-remediation-download-scripts:
+  variables:
+    GITLAB_API: ""
+    ADORSYS_CI_TEMPLATES_PROJECT: ""
   before_script:
     - apt-get update && apt-get install -y git jq curl nodejs npm --no-install-recommends
     - pip install --quiet requests
     - mkdir -p /scripts
     - |
+      set -eu
+      : "${GITLAB_API:?Set GITLAB_API as a project/group CI/CD variable}"
+      : "${ADORSYS_CI_TEMPLATES_PROJECT:?Set ADORSYS_CI_TEMPLATES_PROJECT as a project/group CI/CD variable}"
+      PROJECT_ENC=$(printf '%s' "$ADORSYS_CI_TEMPLATES_PROJECT" | sed 's#/#%2F#g')
+      export PROJECT_ENC
+    - |
       if [ -z "$GITLAB_CI_TEMPLATES_REF" ]; then
         GITLAB_CI_TEMPLATES_REF=$(curl -sL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
-          "${GITLAB_API:-https://git.adorsys.de}/api/v4/projects/adorsys%2Fxs2a%2Fadorsys-ci-cd-templates/repository/tags?order_by=version&sort=desc&per_page=1" \
+          "${GITLAB_API}/api/v4/projects/${PROJECT_ENC}/repository/tags?order_by=version&sort=desc&per_page=1" \
           | jq -r '.[0].name')
-        echo "Auto-detected gitlab-ci-templates ref: ${GITLAB_CI_TEMPLATES_REF}"
+        echo "Auto-detected adorsys-ci-cd-templates ref: ${GITLAB_CI_TEMPLATES_REF}"
       else
-        echo "Using configured gitlab-ci-templates ref: ${GITLAB_CI_TEMPLATES_REF}"
+        echo "Using configured adorsys-ci-cd-templates ref: ${GITLAB_CI_TEMPLATES_REF}"
       fi
       if [ -z "$GITLAB_CI_TEMPLATES_REF" ]; then
-        echo "ERROR: Could not determine gitlab-ci-templates version tag."
+        echo "ERROR: Could not determine adorsys-ci-cd-templates version tag."
         echo "Set GITLAB_CI_TEMPLATES_REF manually or check CI_JOB_TOKEN permissions."
         exit 1
       fi
       export GITLAB_CI_TEMPLATES_REF
     - |
-      TEMPLATES_BASE_URL="https://git.adorsys.de/api/v4/projects/adorsys%2Fxs2a%2Fadorsys-ci-cd-templates/repository/files"
+      TEMPLATES_BASE_URL="${GITLAB_API}/api/v4/projects/${PROJECT_ENC}/repository/files"
       echo "Downloading aggregator script @ ${GITLAB_CI_TEMPLATES_REF}..."
       curl -sL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
         "${TEMPLATES_BASE_URL}/ci%2Fgitlab%2Fscripts%2Funified-security-aggregator.py/raw?ref=${GITLAB_CI_TEMPLATES_REF}" \

@@ -74,8 +74,9 @@ if [ -f "security-reports/.fixes-applied" ]; then
     echo "Fixes applied locally: $(cat security-reports/.fixes-applied)"
 fi
 
-git config --global user.email "renovate@adorsys.de"
-git config --global user.name "Security Bot"
+[ -z "${GITLAB_USER_EMAIL:-}" ] && { echo "Error: GITLAB_USER_EMAIL not set (define it as a project/group CI/CD variable)"; exit 1; }
+git config --global user.email "$GITLAB_USER_EMAIL"
+git config --global user.name "${GITLAB_USER_NAME:-Security Bot}"
 
 # Delegate to create-remediation-mr.sh which handles:
 #   - Detecting existing MRs (including Renovate branches)

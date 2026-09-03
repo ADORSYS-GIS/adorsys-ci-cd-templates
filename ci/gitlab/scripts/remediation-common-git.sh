@@ -33,7 +33,8 @@ collect_reports() {
 }
 
 push_fixes_to_branch() {
-    local BRANCH_NAME="$1" REMEDIATION_FILE="$2" GITLAB_HOST="${3:-git.adorsys.de}" GITLAB_TOKEN="$4" CI_PROJECT_PATH="$5"
+    local BRANCH_NAME="$1" REMEDIATION_FILE="$2" GITLAB_HOST="$3" GITLAB_TOKEN="$4" CI_PROJECT_PATH="$5"
+    [[ -z "$GITLAB_HOST" ]] && { echo "Error: GITLAB_HOST not set (define it as a project/group CI/CD variable)"; exit 1; }
     echo "Pushing fixes to branch: $BRANCH_NAME"
 
     # Check for local modifications before switching branches

@@ -2,16 +2,6 @@
 # Standard Experience uses BLOCKER and CRITICAL issue severities. HIGH is an
 # impact level used by Multi-Quality Rule mode, not a Standard Experience API
 # severity.
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'ci/gitlab/jobs/security/sonarqube-angular.yml'
-#
-#   SonarQube Angular:
-#     extends: .sonarqube-angular
-#     variables:
-#       SONAR_PROJECT_KEY: "my-project-key"
 
 .sonarqube-angular:
   image:

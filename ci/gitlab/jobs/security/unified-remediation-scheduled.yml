@@ -4,16 +4,6 @@
 #   1. The schedule target branch (CI_COMMIT_BRANCH)
 #   2. develop (if different from the target)
 #   3. The latest even-numbered support branch (if any, and if not already listed)
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file:
-#         - 'ci/gitlab/jobs/security/unified-remediation.yml'
-#         - 'ci/gitlab/jobs/security/unified-remediation-scheduled.yml'
-#
-#   Unified Remediation:
-#     extends: .unified-remediation-scheduled
 
 .unified-remediation-scheduled:
   extends: .unified-remediation-base

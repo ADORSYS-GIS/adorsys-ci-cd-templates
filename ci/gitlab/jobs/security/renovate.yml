@@ -11,50 +11,6 @@
 #   - Every new Dockerfile or pom.xml added to the repo is auto-discovered
 #
 # See: https://docs.renovatebot.com/self-hosted-configuration/
-#
-# ── USAGE ────────────────────────────────────────────────────────────────────
-# include:
-#   - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#     ref: 'v1.2.7'
-#     file: 'ci/gitlab/jobs/security/renovate.yml'
-#
-# Renovate Update:
-#   extends: .renovate-update
-#
-# ── REQUIRED CI/CD VARIABLES ─────────────────────────────────────────────────
-# Settings > CI/CD > Variables (group- or project-level):
-#   RENOVATE_GITLAB_TOKEN  - GitLab PAT: api, read_user, write_repository scopes
-#
-# ── OPTIONAL CI/CD VARIABLES ─────────────────────────────────────────────────
-#   RENOVATE_GITHUB_TOKEN  - GitHub PAT (read-only, public_repo scope).
-#                            Provides access to GitHub Security Advisories (GHSA)
-#                            for richer vulnerability data alongside OSV.
-#
-# ── PROJECT CONFIG ───────────────────────────────────────────────────────────
-# Add a renovate.json at the repo root. Security-only example:
-#
-#   {
-#     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-#     "extends": ["config:recommended"],
-#     "enabled": false,
-#     "osvVulnerabilityAlerts": true,
-#     "vulnerabilityAlerts": {
-#       "enabled": true,
-#       "minimumSeverity": "high",
-#       "groupName": "security-updates",
-#       "branchName": "bugFix/issue-0001-security-updates-{{{baseBranch}}}",
-#       "commitMessagePrefix": "fix(deps):",
-#       "labels": ["dependencies", "security"],
-#       "addLabels": ["renovate"],
-#       "separateMajorMinor": false
-#     },
-#     "branchPrefix": "bugFix/issue-0001-",
-#     "baseBranchPatterns": ["develop"],
-#     "enabledManagers": ["maven", "dockerfile"],
-#     "packageRules": [
-#       { "matchPackageNames": ["de.adorsys.internal:*"], "enabled": false }
-#     ]
-#   }
 
 .renovate-update:
   stage: Security
@@ -71,8 +27,8 @@
     # ── Renovate core settings ────────────────────────────────────────────────
     RENOVATE_PLATFORM: "gitlab"
     RENOVATE_ENDPOINT: "${CI_SERVER_URL}/api/v4"
-    # RENOVATE_GITLAB_TOKEN must be set as a protected CI/CD variable.
-    RENOVATE_TOKEN: "${RENOVATE_GITLAB_TOKEN}"
+    # GITLAB_TOKEN must be set as a protected CI/CD variable.
+    RENOVATE_TOKEN: "${GITLAB_TOKEN}"
     # Scan only the current project. Never autodiscover across the instance.
     RENOVATE_AUTODISCOVER: "false"
     RENOVATE_REPOSITORIES: "${CI_PROJECT_PATH}"

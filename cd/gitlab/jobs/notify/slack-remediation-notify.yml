@@ -1,20 +1,5 @@
 # Slack Notification Template — Unified Security Remediation
 # Reports remediation MR results to Slack: CVE counts, MR link, fix status.
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'cd/gitlab/jobs/notify/slack-remediation-notify.yml'
-#
-#   Notify Slack (Remediation):
-#     extends: .slack_notify_remediation
-#     needs:
-#       - job: "Unified Remediation (develop)"
-#         optional: true
-#
-# Required:
-#   SLACK_WEBHOOK_URL  - Slack incoming webhook URL
-#   GITLAB_TOKEN        - GitLab PAT with api scope (to fetch MR details)
 
 .slack_notify_remediation:
   stage: "Notify"
@@ -22,6 +7,7 @@
   allow_failure: true
   variables:
     REMEDIATION_BRANCH_PREFIX: "bugFix/issue-0001-security-updates"
+    ADORSYS_CI_TEMPLATES_PROJECT: ""
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule" && $SCHEDULE_TYPE == "security-scan"'
       when: always
@@ -29,15 +15,17 @@
     - apk add --no-cache curl jq bash
   script:
     - |
+      : "${ADORSYS_CI_TEMPLATES_PROJECT:?Set ADORSYS_CI_TEMPLATES_PROJECT as a project/group CI/CD variable}"
+      PROJECT_ENC=$(printf '%s' "$ADORSYS_CI_TEMPLATES_PROJECT" | sed 's#/#%2F#g')
       # Resolve the templates ref: prefer the explicit variable, then latest tag, then master.
       if [ -z "${GITLAB_CI_TEMPLATES_REF:-}" ]; then
         GITLAB_CI_TEMPLATES_REF=$(curl -sL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
-          "${CI_API_V4_URL}/projects/adorsys%2Fxs2a%2Fadorsys-ci-cd-templates/repository/tags?order_by=version&sort=desc&per_page=1" \
+          "${CI_API_V4_URL}/projects/${PROJECT_ENC}/repository/tags?order_by=version&sort=desc&per_page=1" \
           | jq -r '.[0].name // empty' 2>/dev/null || true)
       fi
       TEMPLATES_REF="${GITLAB_CI_TEMPLATES_REF:-master}"
       echo "notify-remediation ref: ${TEMPLATES_REF}"
-      SCRIPT_URL="${CI_API_V4_URL}/projects/adorsys%2Fxs2a%2Fadorsys-ci-cd-templates/repository/files/cd%2Fgitlab%2Fscripts%2Fnotify-remediation.sh/raw?ref=${TEMPLATES_REF}"
+      SCRIPT_URL="${CI_API_V4_URL}/projects/${PROJECT_ENC}/repository/files/cd%2Fgitlab%2Fscripts%2Fnotify-remediation.sh/raw?ref=${TEMPLATES_REF}"
       curl -sL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${SCRIPT_URL}" -o /tmp/notify-remediation.sh
       # Detect API error responses (GitLab returns JSON on 404, not a shell script)
       if ! head -1 /tmp/notify-remediation.sh | grep -q '^#!'; then

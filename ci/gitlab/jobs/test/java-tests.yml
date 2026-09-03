@@ -1,10 +1,5 @@
 # Java test job templates
 # Runs unit tests, integration tests, and javadoc generation
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'ci/gitlab/jobs/test/java-tests.yml'
 
 .test-java-unit:
   image: "${JAVA_MAVEN_IMAGE}"
@@ -120,14 +115,6 @@
 
 # Javadoc variant that passes Maven settings — for projects requiring
 # authenticated/custom Maven repositories during the javadoc build.
-#
-# Usage:
-#   Test (Javadoc):
-#     extends: .test-javadoc-with-settings
-#     except: [schedules]
-#
-# Variables:
-#   MAVEN_SETTINGS_PATH - Path to Maven settings file. Default: scripts/mvn-release-settings.xml
 .test-javadoc-with-settings:
   extends: .test-javadoc
   variables:
@@ -138,11 +125,6 @@
 
 # Legacy javadoc variant using 'package' goal instead of 'verify'.
 # Use for projects that cannot enable the javadoc Maven profile.
-#
-# Usage:
-#   Test (Javadoc):
-#     extends: .test-javadoc-package
-#     except: [schedules]
 .test-javadoc-package:
   extends: .test-javadoc
   script:
@@ -150,14 +132,6 @@
     - mvn -Dmaven.test.skip=true package javadoc:javadoc
 
 # Unit test variant for projects using a custom Maven settings file.
-#
-# Usage:
-#   Test (Unit Tests):
-#     extends: .test-java-unit-settings
-#     except: [schedules]
-#
-# Variables:
-#   MAVEN_SETTINGS_PATH - Path to settings file. Default: scripts/mvn-release-settings.xml
 .test-java-unit-settings:
   extends: .test-java-unit
   variables:
@@ -168,14 +142,6 @@
 
 # Failsafe (integration-test) variant without Docker, for projects that run
 # Maven failsafe via a private registry settings file rather than testcontainers.
-#
-# Usage:
-#   Test (IT):
-#     extends: .test-java-failsafe-settings
-#     except: [schedules]
-#
-# Variables:
-#   MAVEN_SETTINGS_PATH - Path to settings file. Default: scripts/mvn-release-settings.xml
 .test-java-failsafe-settings:
   extends: .test-java-unit
   variables:
@@ -193,14 +159,6 @@
 # Javadoc variant using the 'package' goal with a Maven settings file.
 # For projects that cannot use the 'verify' goal or the javadoc Maven profile
 # but still need private registry auth during the javadoc build.
-#
-# Usage:
-#   Test (Javadoc):
-#     extends: .test-javadoc-package-settings
-#     except: [schedules]
-#
-# Variables:
-#   MAVEN_SETTINGS_PATH - Path to settings file. Default: scripts/mvn-release-settings.xml
 .test-javadoc-package-settings:
   extends: .test-javadoc
   variables:

@@ -2,26 +2,6 @@
 # Runs linting for Java backend modules that expose a make target.
 # Uses before_script: [] to prevent global project before_script from running
 # (e.g. docker login setup), since this job uses a plain Debian image.
-#
-# Usage:
-#   include:
-#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
-#       file: 'ci/gitlab/jobs/lint/java-module-lint.yml'
-#
-#   Lint (OBA Backend):
-#     extends: .lint-java-module
-#     except: [schedules, develop, master]
-#     variables:
-#       JAVA_LINT_TARGET: "lint-online-banking"
-#
-#   Lint (TPP Backend):
-#     extends: .lint-java-module
-#     except: [schedules, develop, master]
-#     variables:
-#       JAVA_LINT_TARGET: "lint-tpp-rest-server"
-#
-# Variables:
-#   JAVA_LINT_TARGET - The make target to invoke. Default: lint
 
 .lint-java-module:
   image: debian:stable-slim
