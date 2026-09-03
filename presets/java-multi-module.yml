@@ -17,6 +17,7 @@ include:
       - 'ci/gitlab/jobs/lint/docker-compose-lint.yml'
       - 'ci/gitlab/jobs/lint/dockerfile-lint.yml'
       - 'ci/gitlab/jobs/lint/pmd-cpd.yml'
+      - 'ci/gitlab/jobs/lint/yaml-json-xml-lint.yml'
       - 'ci/gitlab/jobs/security/owasp-dependency-check.yml'
       - 'ci/gitlab/jobs/security/renovate.yml'
       - 'ci/gitlab/jobs/build/java-maven.yml'

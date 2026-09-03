@@ -4,6 +4,7 @@ Extracted from cli.py so each module stays under 200 lines.
 Handles Maven (pom.xml), npm (package.json), and Docker (Dockerfile) updates.
 """
 import os
+import subprocess
 import traceback
 from typing import Optional
 
@@ -94,8 +95,12 @@ def apply_fixes(remediations: list[Remediation], project_dir: str) -> int:
 
         for npm_dir in sorted(npm_dirs):
             lock = os.path.join(npm_dir, 'package-lock.json')
-            extra = '--package-lock-only' if os.path.exists(lock) else ''
-            if os.system(f'cd {npm_dir} && npm install {extra} 2>&1') != 0:
+            cmd = ['npm', 'install'] + (['--package-lock-only'] if os.path.exists(lock) else [])
+            res = subprocess.run(
+                cmd, cwd=npm_dir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            )
+            if res.returncode != 0:
+                print(res.stdout)
                 print(f"  WARNING: npm install failed in {npm_dir}")
 
     except Exception as exc:

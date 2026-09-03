@@ -1,8 +1,15 @@
+import hashlib
 import re
 from typing import Optional
 from .models import CVEFinding
 from .utils import load_json_file
 from .owasp import extract_maven_coords_from_jar
+
+
+def _stable_id(text: str) -> str:
+    """Deterministic 4-digit ID, unlike Python's per-process randomized hash()."""
+    digest = hashlib.sha256(text.encode('utf-8')).hexdigest()
+    return f"{int(digest[:8], 16) % 10000:04d}"
 
 
 def parse_trivy_fs_report(report_path: str) -> list[CVEFinding]:
@@ -108,7 +115,7 @@ def parse_trivy_dockerfile_report(report_path: str) -> list[CVEFinding]:
             file_path = result.get('Target', '')
 
             findings.append(CVEFinding(
-                cve_id=cve_id or f"DOCKERFILE-{hash(title) % 10000:04d}",
+                cve_id=cve_id or f"DOCKERFILE-{_stable_id(title)}",
                 severity=severity,
                 package_name='Dockerfile',
                 package_version='',

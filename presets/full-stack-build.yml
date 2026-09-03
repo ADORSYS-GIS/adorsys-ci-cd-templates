@@ -1,8 +1,10 @@
 # Full Stack Project Preset — Build, Test, Package, and Release stages
 # Companion to full-stack.yml which defines Lint stage jobs.
 #
-# This file defines the build, test, package, and release jobs.
-# Both files must be included together:
+# This file defines runnable Test/Security/Release jobs plus hidden Compile
+# templates (`.build-java-backend`, `.build-node-ui`) that consumers must
+# extend with their own job name, since compile setup (e.g. UI_MODULE) is
+# project-specific. Both files must be included together:
 #
 #   include:
 #     - project: 'adorsys/xs2a/gitlab-ci-templates'
@@ -23,8 +25,8 @@
   rules: !reference [.pipeline-always-except-schedules, rules]
   script:
     - apt-get update && apt-get install make libxml2-utils jq -yq
-    - VERSION=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='version']/text()" ../pom.xml || echo "0.0.1")
-    - jq --arg VERSION "$VERSION" --arg BUILD_ID "$CI_PIPELINE_ID" '.version = $VERSION | .build_number = $BUILD_ID' info.json >> info.tmp.json || true
+    - VERSION=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='version']/text()" "${CI_PROJECT_DIR}/pom.xml" 2>/dev/null || echo "0.0.1")
+    - jq --arg VERSION "$VERSION" --arg BUILD_ID "$CI_PIPELINE_ID" '.version = $VERSION | .build_number = $BUILD_ID' info.json > info.tmp.json || true
     - mv info.tmp.json info.json || true
     - make npm-install-${UI_MODULE}
   artifacts:

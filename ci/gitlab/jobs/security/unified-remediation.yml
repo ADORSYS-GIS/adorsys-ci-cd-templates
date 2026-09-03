@@ -27,7 +27,7 @@
 
 .unified-remediation-base:
   image: python:3.11-slim
-  stage: security-scan
+  stage: Security
   variables:
     PYTHONUNBUFFERED: "1"
     SEVERITY_FILTER: "HIGH,CRITICAL"
