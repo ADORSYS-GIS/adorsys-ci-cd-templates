@@ -5,7 +5,7 @@
 #
 # Usage:
 #   include:
-#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
 #       file: 'ci/gitlab/jobs/lint/java-module-lint.yml'
 #
 #   Lint (OBA Backend):

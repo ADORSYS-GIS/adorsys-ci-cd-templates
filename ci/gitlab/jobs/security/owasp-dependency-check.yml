@@ -6,7 +6,7 @@
 #
 # Usage:
 #   include:
-#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
 #       file: 'ci/gitlab/jobs/security/owasp-dependency-check.yml'
 #
 #   OWASP Dependency Check:
@@ -19,7 +19,7 @@
 
 # Strict (allow_failure: false) variants are in the sub-file included below.
 include:
-  - project: 'adorsys/xs2a/gitlab-ci-templates'
+  - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
     file: 'ci/gitlab/jobs/security/owasp-dependency-check-strict.yml'
 
 .owasp-dependency-check:

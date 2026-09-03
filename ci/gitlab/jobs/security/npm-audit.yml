@@ -6,7 +6,7 @@
 #
 # ── USAGE ────────────────────────────────────────────────────────────────────
 # include:
-#   - project: 'adorsys/xs2a/gitlab-ci-templates'
+#   - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
 #     ref: 'v1.2.0'
 #     file: 'ci/gitlab/jobs/security/npm-audit.yml'
 #

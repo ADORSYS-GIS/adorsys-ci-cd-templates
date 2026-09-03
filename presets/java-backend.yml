@@ -3,7 +3,7 @@
 #
 # Usage:
 #   include:
-#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
 #       file: 'presets/java-backend.yml'
 #
 #   # Override project-specific settings
@@ -12,7 +12,7 @@
 #     DOCKERHUB_NAMESPACE: "adorsys/xs2a/my-project"
 
 include:
-  - project: 'adorsys/xs2a/gitlab-ci-templates'
+  - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
     file:
       - 'ci/gitlab/services/docker-dind.yml'
       - 'ci/gitlab/variables/java-variables.yml'

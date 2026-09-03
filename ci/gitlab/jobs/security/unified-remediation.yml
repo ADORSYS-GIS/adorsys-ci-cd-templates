@@ -11,7 +11,7 @@
 #
 # Usage:
 #   include:
-#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
 #       file: 'ci/gitlab/jobs/security/unified-remediation.yml'
 #
 #   Unified Remediation (push):
@@ -60,7 +60,7 @@
     - |
       if [ -z "$GITLAB_CI_TEMPLATES_REF" ]; then
         GITLAB_CI_TEMPLATES_REF=$(curl -sL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
-          "${GITLAB_API:-https://git.adorsys.de}/api/v4/projects/adorsys%2Fxs2a%2Fgitlab-ci-templates/repository/tags?order_by=version&sort=desc&per_page=1" \
+          "${GITLAB_API:-https://git.adorsys.de}/api/v4/projects/adorsys%2Fxs2a%2Fadorsys-ci-cd-templates/repository/tags?order_by=version&sort=desc&per_page=1" \
           | jq -r '.[0].name')
         echo "Auto-detected gitlab-ci-templates ref: ${GITLAB_CI_TEMPLATES_REF}"
       else
@@ -73,7 +73,7 @@
       fi
       export GITLAB_CI_TEMPLATES_REF
     - |
-      TEMPLATES_BASE_URL="https://git.adorsys.de/api/v4/projects/adorsys%2Fxs2a%2Fgitlab-ci-templates/repository/files"
+      TEMPLATES_BASE_URL="https://git.adorsys.de/api/v4/projects/adorsys%2Fxs2a%2Fadorsys-ci-cd-templates/repository/files"
       echo "Downloading aggregator script @ ${GITLAB_CI_TEMPLATES_REF}..."
       curl -sL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
         "${TEMPLATES_BASE_URL}/ci%2Fgitlab%2Fscripts%2Funified-security-aggregator.py/raw?ref=${GITLAB_CI_TEMPLATES_REF}" \
