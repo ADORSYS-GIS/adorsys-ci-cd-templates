@@ -3,7 +3,7 @@
 #
 # Usage:
 #   include:
-#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
 #       file: 'ci/gitlab/jobs/lint/yaml-json-xml-lint.yml'
 #
 #   Lint Config Files:

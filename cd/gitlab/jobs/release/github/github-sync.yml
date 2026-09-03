@@ -3,7 +3,7 @@
 #
 # Usage:
 #   include:
-#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
 #       file: 'cd/gitlab/jobs/release/github/github-sync.yml'
 #
 #   sync_to_github:

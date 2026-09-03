@@ -3,7 +3,7 @@
 #
 # Usage:
 #   include:
-#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
 #       file: 'cd/gitlab/jobs/notify/slack-notify.yml'
 #
 #   Notify Slack on Failure:
@@ -20,7 +20,7 @@
     - apk add --no-cache curl jq bash
   script:
     - |
-      SCRIPT_URL="${CI_API_V4_URL}/projects/adorsys%2Fxs2a%2Fgitlab-ci-templates/repository/files/cd%2Fgitlab%2Fscripts%2Fnotify-slack.sh/raw?ref=main"
+      SCRIPT_URL="${CI_API_V4_URL}/projects/adorsys%2Fxs2a%2Fadorsys-ci-cd-templates/repository/files/cd%2Fgitlab%2Fscripts%2Fnotify-slack.sh/raw?ref=main"
       curl -sL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${SCRIPT_URL}" -o /tmp/notify-slack.sh || {
         echo "Falling back to inline script..."
         cat > /tmp/notify-slack.sh <<'INLINE_EOF'

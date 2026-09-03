@@ -3,7 +3,7 @@
 #
 # Usage:
 #   include:
-#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
 #       file: 'cd/gitlab/jobs/notify/slack-remediation-notify.yml'
 #
 #   Notify Slack (Remediation):
@@ -32,12 +32,12 @@
       # Resolve the templates ref: prefer the explicit variable, then latest tag, then master.
       if [ -z "${GITLAB_CI_TEMPLATES_REF:-}" ]; then
         GITLAB_CI_TEMPLATES_REF=$(curl -sL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
-          "${CI_API_V4_URL}/projects/adorsys%2Fxs2a%2Fgitlab-ci-templates/repository/tags?order_by=version&sort=desc&per_page=1" \
+          "${CI_API_V4_URL}/projects/adorsys%2Fxs2a%2Fadorsys-ci-cd-templates/repository/tags?order_by=version&sort=desc&per_page=1" \
           | jq -r '.[0].name // empty' 2>/dev/null || true)
       fi
       TEMPLATES_REF="${GITLAB_CI_TEMPLATES_REF:-master}"
       echo "notify-remediation ref: ${TEMPLATES_REF}"
-      SCRIPT_URL="${CI_API_V4_URL}/projects/adorsys%2Fxs2a%2Fgitlab-ci-templates/repository/files/cd%2Fgitlab%2Fscripts%2Fnotify-remediation.sh/raw?ref=${TEMPLATES_REF}"
+      SCRIPT_URL="${CI_API_V4_URL}/projects/adorsys%2Fxs2a%2Fadorsys-ci-cd-templates/repository/files/cd%2Fgitlab%2Fscripts%2Fnotify-remediation.sh/raw?ref=${TEMPLATES_REF}"
       curl -sL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${SCRIPT_URL}" -o /tmp/notify-remediation.sh
       # Detect API error responses (GitLab returns JSON on 404, not a shell script)
       if ! head -1 /tmp/notify-remediation.sh | grep -q '^#!'; then

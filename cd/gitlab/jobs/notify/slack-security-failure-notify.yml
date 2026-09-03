@@ -8,7 +8,7 @@
 #
 # Usage:
 #   include:
-#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
 #       file: 'cd/gitlab/jobs/notify/slack-security-failure-notify.yml'
 #
 #   Notify Slack (security failure):

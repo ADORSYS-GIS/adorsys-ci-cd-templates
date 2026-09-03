@@ -7,7 +7,7 @@
 # project-specific. Both files must be included together:
 #
 #   include:
-#     - project: 'adorsys/xs2a/gitlab-ci-templates'
+#     - project: 'adorsys/xs2a/adorsys-ci-cd-templates'
 #       file:
 #         - 'presets/full-stack.yml'
 #         - 'presets/full-stack-build.yml'

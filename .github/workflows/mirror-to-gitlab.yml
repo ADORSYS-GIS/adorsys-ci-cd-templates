@@ -33,9 +33,10 @@ jobs:
       - name: Push mirror to GitLab
         env:
           GITLAB_TOKEN: ${{ secrets.XS2A_GITLAB_SYNC_TOKEN }}
+          GITLAB_SYNC_URL: ${{ secrets.XS2A_GITLAB_SYNC_URL }}
         run: |
           git remote remove gitlab 2>/dev/null || true
-          git remote add gitlab "https://oauth2:${GITLAB_TOKEN}@git.adorsys.de/adorsys/xs2a/gitlab-ci-templates.git"
+          git remote add gitlab "https://oauth2:${GITLAB_TOKEN}@${GITLAB_SYNC_URL}"
           # Try a normal (fast-forward) push first; only force when GitLab
           # main has diverged (e.g. first bootstrap or a GitHub history rewrite).
           if ! git push gitlab 'HEAD:refs/heads/main'; then
