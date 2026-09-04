@@ -1,0 +1,42 @@
+name: SonarQube Scan
+
+on:
+  workflow_call:
+    inputs:
+      project-key:
+        required: true
+        type: string
+      source-dirs:
+        default: "."
+        required: false
+        type: string
+      exclusions:
+        default: "**/node_modules/**,**/dist/**,**/build/**,**/coverage/**"
+        required: false
+        type: string
+    secrets:
+      SONAR_HOST_URL:
+        required: true
+      SONAR_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: SonarSource/sonarqube-scan-action@v7
+        env:
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.projectKey=${{ inputs.project-key }}
+            -Dsonar.sources=${{ inputs.source-dirs }}
+            -Dsonar.exclusions=${{ inputs.exclusions }}

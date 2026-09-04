@@ -53,34 +53,28 @@ SonarQube:
 
 ## GitHub
 
-Add this job to `.github/workflows/sonarqube.yml` and use the same scanner for
-any supported language:
+Add this caller workflow to `.github/workflows/sonarqube.yml`:
 
 ```yaml
 name: SonarQube
 
 on:
   pull_request:
+    branches: [develop, main]
   push:
     branches: [develop]
 
+permissions:
+  contents: read
+
 jobs:
   scan:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: SonarSource/sonarqube-scan-action@v5
-        env:
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        with:
-          args: >
-            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
-            -Dsonar.sources=.
+    uses: ADORSYS-GIS/adorsys-ci-cd-templates/.github/workflows/sonarqube.yml@main
+    with:
+      project-key: my-project
+      exclusions: "**/node_modules/**,**/dist/**,**/build/**,**/coverage/**"
+    secrets: inherit
 ```
 
-Add optional scanner arguments to `args`, for example
-`-Dsonar.exclusions=**/.terraform/**` or
-`-Dsonar.javascript.lcov.reportPaths=coverage/lcov.info`.
+Configure `SONAR_HOST_URL` and `SONAR_TOKEN` as repository secrets. The shared
+workflow accepts optional `source-dirs` and `exclusions` inputs.

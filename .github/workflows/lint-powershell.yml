@@ -1,0 +1,21 @@
+name: Lint PowerShell
+
+on:
+  workflow_call:
+    inputs:
+      path:
+        default: "."
+        required: false
+        type: string
+
+jobs:
+  lint:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - shell: pwsh
+        run: Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+      - shell: pwsh
+        run: |
+          $results = Get-ChildItem -Path '${{ inputs.path }}' -Recurse -Include *.ps1,*.psm1,*.psd1 | Invoke-ScriptAnalyzer
+          if ($results) { $results | Format-Table -AutoSize; exit 1 }

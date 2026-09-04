@@ -1,0 +1,17 @@
+name: Lint Shell
+
+on:
+  workflow_call:
+    inputs:
+      path:
+        default: "."
+        required: false
+        type: string
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install --yes shellcheck
+      - run: find '${{ inputs.path }}' -type f \( -name '*.sh' -o -name '*.bash' -o -name '*.zsh' \) -print0 | xargs --no-run-if-empty -0 shellcheck

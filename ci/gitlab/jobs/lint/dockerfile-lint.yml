@@ -14,7 +14,10 @@
     DOCKER_DRIVER: overlay2
     DOCKER_REGISTRY: ""
   before_script:
-    - echo "${ADORSYS_REGISTRY_PASSWORD}" | docker login -u "${ADORSYS_REGISTRY_USER}" --password-stdin "${DOCKER_REGISTRY}"
+    - ': "${DOCKER_REGISTRY:?DOCKER_REGISTRY must be configured as a GitLab CI variable}"'
+    - ': "${DOCKER_REGISTRY_USER:?DOCKER_REGISTRY_USER must be configured as a masked GitLab CI variable}"'
+    - ': "${DOCKER_REGISTRY_PASSWORD:?DOCKER_REGISTRY_PASSWORD must be configured as a masked GitLab CI variable}"'
+    - printf '%s' "${DOCKER_REGISTRY_PASSWORD}" | docker login -u "${DOCKER_REGISTRY_USER}" --password-stdin "${DOCKER_REGISTRY}"
 
 .lint-dockerfiles:
   extends: .lint-dockerfiles-base
