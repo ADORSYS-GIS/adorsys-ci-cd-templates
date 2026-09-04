@@ -1,0 +1,25 @@
+name: Security Shell
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        required: true
+        type: string
+      working-directory:
+        required: true
+        type: string
+
+jobs:
+  scan:
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@master
+        continue-on-error: ${{ github.base_ref != 'develop' && github.base_ref != 'main' && github.base_ref != 'master' && github.ref_name != 'develop' && github.ref_name != 'main' && github.ref_name != 'master' }}
+        with:
+          scan-type: fs
+          scan-ref: ${{ inputs.working-directory }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          exit-code: "1"
