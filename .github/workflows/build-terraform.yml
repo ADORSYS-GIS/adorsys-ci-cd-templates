@@ -1,0 +1,28 @@
+name: Build Terraform
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        required: true
+        type: string
+      working-directory:
+        required: true
+        type: string
+      terraform-version:
+        required: true
+        type: string
+      build-command:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform-version }}
+      - working-directory: ${{ inputs.working-directory }}
+        run: ${{ inputs.build-command }}

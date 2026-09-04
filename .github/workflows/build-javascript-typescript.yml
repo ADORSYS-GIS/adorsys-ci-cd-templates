@@ -1,0 +1,28 @@
+name: Build JavaScript and TypeScript
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        required: true
+        type: string
+      working-directory:
+        required: true
+        type: string
+      node-version:
+        required: true
+        type: string
+      build-command:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+      - working-directory: ${{ inputs.working-directory }}
+        run: ${{ inputs.build-command }}
