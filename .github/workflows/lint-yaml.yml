@@ -1,0 +1,18 @@
+name: Lint YAML
+
+on:
+  workflow_call:
+    inputs:
+      path:
+        default: "."
+        required: false
+        type: string
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ibiqlik/action-yamllint@v3
+        with:
+          file_or_dir: ${{ inputs.path }}

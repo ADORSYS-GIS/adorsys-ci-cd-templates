@@ -1,0 +1,18 @@
+name: Lint Go
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        default: "."
+        required: false
+        type: string
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+      - working-directory: ${{ inputs.working-directory }}
+        run: test -z "$(gofmt -l .)" && go vet ./...

@@ -1,0 +1,26 @@
+name: Lint JavaScript and TypeScript
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        default: "."
+        required: false
+        type: string
+      node-version:
+        default: "24"
+        required: false
+        type: string
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+      - working-directory: ${{ inputs.working-directory }}
+        run: npm ci && npm run lint

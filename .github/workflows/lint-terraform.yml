@@ -1,0 +1,24 @@
+name: Lint Terraform
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        default: "."
+        required: false
+        type: string
+      terraform-version:
+        default: "1.12.2"
+        required: false
+        type: string
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform-version }}
+      - working-directory: ${{ inputs.working-directory }}
+        run: terraform fmt -check -recursive
