@@ -18,17 +18,18 @@ jobs:
       working-directory: "."
       java-version: "21"
       java-distribution: temurin
-      build-command: "mvn -B -ntp -DskipTests package"
 ```
 
-Every workflow requires `runner`, `working-directory`, and `build-command`.
+    Every workflow requires `runner` and `working-directory`.
 
-| Workflow | Additional required inputs |
-|---|---|
-| `build-java.yml` | `java-version`, `java-distribution` |
-| `build-angular.yml`, `build-javascript-typescript.yml` | `node-version` |
-| `build-rust.yml` | `rust-version` |
-| `build-go.yml` | `go-version` |
-| `build-python.yml` | `python-version` |
-| `build-terraform.yml` | `terraform-version` |
-| `build-powershell.yml`, `build-shell.yml`, `build-yaml.yml` | None |
+| Workflow | Additional required inputs | Template operation |
+|---|---|---|
+| `build-java.yml` | `java-version`, `java-distribution` | `mvn -B -ntp -DskipTests package` |
+| `build-angular.yml`, `build-javascript-typescript.yml` | `node-version` | `npm ci && npm run build` |
+| `build-rust.yml` | `rust-version` | `cargo build --locked` |
+| `build-go.yml` | `go-version` | `go build ./...` |
+| `build-python.yml` | `python-version` | `python -m compileall .` |
+| `build-terraform.yml` | `terraform-version` | `terraform init -backend=false && terraform validate` |
+| `build-powershell.yml` | None | PowerShell syntax validation |
+| `build-shell.yml` | None | Shell syntax validation |
+| `build-yaml.yml` | None | No build step; use `lint-yaml.yml` |

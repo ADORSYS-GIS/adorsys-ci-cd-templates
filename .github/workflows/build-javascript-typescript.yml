@@ -12,9 +12,6 @@ on:
       node-version:
         required: true
         type: string
-      build-command:
-        required: true
-        type: string
 
 jobs:
   build:
@@ -25,4 +22,4 @@ jobs:
         with:
           node-version: ${{ inputs.node-version }}
       - working-directory: ${{ inputs.working-directory }}
-        run: ${{ inputs.build-command }}
+        run: npm ci && npm run build

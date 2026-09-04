@@ -12,9 +12,6 @@ on:
       node-version:
         required: true
         type: string
-      build-command:
-        required: true
-        type: string
 
 jobs:
   build:
@@ -23,4 +20,3 @@ jobs:
       runner: ${{ inputs.runner }}
       working-directory: ${{ inputs.working-directory }}
       node-version: ${{ inputs.node-version }}
-      build-command: ${{ inputs.build-command }}

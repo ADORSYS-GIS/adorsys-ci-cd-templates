@@ -15,9 +15,6 @@ on:
       java-distribution:
         required: true
         type: string
-      build-command:
-        required: true
-        type: string
 
 jobs:
   build:
@@ -29,4 +26,4 @@ jobs:
           distribution: ${{ inputs.java-distribution }}
           java-version: ${{ inputs.java-version }}
       - working-directory: ${{ inputs.working-directory }}
-        run: ${{ inputs.build-command }}
+        run: mvn -B -ntp -DskipTests package

@@ -12,9 +12,6 @@ on:
       terraform-version:
         required: true
         type: string
-      build-command:
-        required: true
-        type: string
 
 jobs:
   build:
@@ -25,4 +22,4 @@ jobs:
         with:
           terraform_version: ${{ inputs.terraform-version }}
       - working-directory: ${{ inputs.working-directory }}
-        run: ${{ inputs.build-command }}
+        run: terraform init -backend=false && terraform validate

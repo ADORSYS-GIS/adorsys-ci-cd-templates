@@ -12,9 +12,6 @@ on:
       go-version:
         required: true
         type: string
-      build-command:
-        required: true
-        type: string
 
 jobs:
   build:
@@ -25,4 +22,4 @@ jobs:
         with:
           go-version: ${{ inputs.go-version }}
       - working-directory: ${{ inputs.working-directory }}
-        run: ${{ inputs.build-command }}
+        run: go build ./...

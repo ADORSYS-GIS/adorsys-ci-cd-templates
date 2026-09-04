@@ -12,9 +12,6 @@ on:
       rust-version:
         required: true
         type: string
-      build-command:
-        required: true
-        type: string
 
 jobs:
   build:
@@ -25,4 +22,4 @@ jobs:
         with:
           toolchain: ${{ inputs.rust-version }}
       - working-directory: ${{ inputs.working-directory }}
-        run: ${{ inputs.build-command }}
+        run: cargo build --locked

@@ -9,9 +9,6 @@ on:
       working-directory:
         required: true
         type: string
-      build-command:
-        required: true
-        type: string
 
 jobs:
   build:
@@ -19,4 +16,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - working-directory: ${{ inputs.working-directory }}
-        run: ${{ inputs.build-command }}
+        run: echo "YAML files do not require a build step. Use lint-yaml.yml for validation."
