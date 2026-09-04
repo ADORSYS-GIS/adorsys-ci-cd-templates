@@ -1,23 +1,25 @@
-name: Lint Go
+name: Build Go
 
 on:
   workflow_call:
     inputs:
+      runner:
+        required: true
+        type: string
       working-directory:
-        default: "."
-        required: false
+        required: true
         type: string
       go-version:
         required: true
         type: string
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ${{ inputs.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ inputs.go-version }}
       - working-directory: ${{ inputs.working-directory }}
-        run: test -z "$(gofmt -l .)" && go vet ./...
+        run: go build ./...

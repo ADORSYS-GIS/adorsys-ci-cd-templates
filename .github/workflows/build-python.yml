@@ -1,24 +1,25 @@
-name: Lint Python
+name: Build Python
 
 on:
   workflow_call:
     inputs:
+      runner:
+        required: true
+        type: string
       working-directory:
-        default: "."
-        required: false
+        required: true
         type: string
       python-version:
         required: true
         type: string
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ${{ inputs.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ inputs.python-version }}
-      - run: python -m pip install ruff
       - working-directory: ${{ inputs.working-directory }}
-        run: ruff check .
+        run: python -m compileall .

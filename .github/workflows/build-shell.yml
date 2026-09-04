@@ -1,0 +1,20 @@
+name: Build Shell
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        required: true
+        type: string
+      working-directory:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - working-directory: ${{ inputs.working-directory }}
+        shell: bash
+        run: find . -type f \( -name '*.sh' -o -name '*.bash' -o -name '*.zsh' \) -print0 | xargs --no-run-if-empty -0 bash -n

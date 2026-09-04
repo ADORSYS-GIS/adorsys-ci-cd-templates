@@ -1,0 +1,20 @@
+name: Build PowerShell
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        required: true
+        type: string
+      working-directory:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - working-directory: ${{ inputs.working-directory }}
+        shell: pwsh
+        run: Get-ChildItem -Recurse -Include *.ps1,*.psm1,*.psd1 | ForEach-Object { [void][System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$null) }
