@@ -40,3 +40,5 @@ jobs:
             -Dsonar.projectKey=${{ inputs.project-key }}
             -Dsonar.sources=${{ inputs.source-dirs }}
             -Dsonar.exclusions=${{ inputs.exclusions }}
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=300
