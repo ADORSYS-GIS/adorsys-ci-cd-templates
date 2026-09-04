@@ -31,4 +31,5 @@ projects.
 
 ## Documentation
 
+- [GitHub reusable lint workflows](docs/github-lint.md)
 - [SonarQube scan setup and usage](docs/sonarqube.md)

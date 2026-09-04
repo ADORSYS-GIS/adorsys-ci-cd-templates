@@ -8,8 +8,7 @@ on:
         required: false
         type: string
       node-version:
-        default: "24"
-        required: false
+        required: true
         type: string
 
 jobs:

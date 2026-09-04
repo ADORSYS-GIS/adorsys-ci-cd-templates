@@ -8,8 +8,7 @@ on:
         required: false
         type: string
       python-version:
-        default: "3.12"
-        required: false
+        required: true
         type: string
 
 jobs:
