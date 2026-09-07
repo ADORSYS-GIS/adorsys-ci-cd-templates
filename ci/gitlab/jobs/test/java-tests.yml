@@ -7,7 +7,7 @@
   variables:
     JAVA_TOOL_OPTIONS: "-Djavax.net.ssl.trustStorePassword=changeit -XX:MaxRAM=3G"
     MAVEN_REPO_PATH: ".m2/repository"
-    MAVEN_OPTS: "-Dmaven.repo.local=${CI_PROJECT_DIR}/${MAVEN_REPO_PATH}"
+    MAVEN_OPTS: "-Dmaven.repo.local=${MAVEN_REPO_PATH}"
   cache:
     key: "maven-cache-$CI_COMMIT_REF_SLUG"
     paths:
@@ -38,7 +38,7 @@
   variables:
     JAVA_TOOL_OPTIONS: "-Djavax.net.ssl.trustStorePassword=changeit -XX:MaxRAM=3G"
     MAVEN_REPO_PATH: ".m2/repository"
-    MAVEN_OPTS: "-Dmaven.repo.local=${CI_PROJECT_DIR}/${MAVEN_REPO_PATH}"
+    MAVEN_OPTS: "-Dmaven.repo.local=${MAVEN_REPO_PATH}"
     DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""
     DOCKER_API_VERSION: "1.44"
@@ -68,7 +68,7 @@
   variables:
     JAVA_TOOL_OPTIONS: "-Djavax.net.ssl.trustStorePassword=changeit -XX:MaxRAM=3G"
     MAVEN_REPO_PATH: ".m2/repository"
-    MAVEN_OPTS: "-Dmaven.repo.local=${CI_PROJECT_DIR}/${MAVEN_REPO_PATH}"
+    MAVEN_OPTS: "-Dmaven.repo.local=${MAVEN_REPO_PATH}"
   cache:
     key: "maven-cache-$CI_COMMIT_REF_SLUG"
     paths:
