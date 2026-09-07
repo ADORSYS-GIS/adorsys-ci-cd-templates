@@ -4,7 +4,7 @@
 .variables-maven:
   variables:
     MAVEN_REPO_PATH: ".m2/repository"
-    MAVEN_OPTS: "-Dmaven.repo.local=${CI_PROJECT_DIR}/${MAVEN_REPO_PATH}"
+    MAVEN_OPTS: "-Dmaven.repo.local=${MAVEN_REPO_PATH}"
 
 .cache-maven:
   cache:
