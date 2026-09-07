@@ -19,7 +19,8 @@
     - mvn -version
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
-    - mvn -ntp -DskipITs --fail-at-end test-compile surefire:test -q
+    # Test classes are compiled by the Build job and consumed via artifacts; do not recompile here.
+    - mvn -ntp -DskipITs --fail-at-end surefire:test -q
   artifacts:
     paths:
       - "**/target/surefire-reports/*"
@@ -53,7 +54,8 @@
     - mvn -version
   script:
     - docker --host "$DOCKER_HOST" version || true
-    - mvn -ntp test-compile failsafe:integration-test failsafe:verify --fail-at-end --errors
+    # Test classes are compiled by the Build job and consumed via artifacts; do not recompile here.
+    - mvn -ntp failsafe:integration-test failsafe:verify --fail-at-end --errors
   artifacts:
     paths:
       - "**/target/site/jacoco/jacoco.xml"
@@ -78,7 +80,8 @@
     - mvn -version
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
-    - mvn -ntp -Dmaven.test.skip=true -Pjavadoc verify javadoc:javadoc
+    # Compiled classes come from the Build job's artifacts; only run the javadoc goal, no rebuild.
+    - mvn -ntp -Dmaven.test.skip=true -Pjavadoc javadoc:javadoc
   artifacts:
     paths:
       - "**/target/site/*"
@@ -93,7 +96,8 @@
     MAVEN_SETTINGS_PATH: "scripts/mvn-release-settings.xml"
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
-    - mvn -ntp --settings ${MAVEN_SETTINGS_PATH} -Dmaven.test.skip=true -Pjavadoc verify javadoc:javadoc
+    # Compiled classes come from the Build job's artifacts; only run the javadoc goal, no rebuild.
+    - mvn -ntp --settings ${MAVEN_SETTINGS_PATH} -Dmaven.test.skip=true -Pjavadoc javadoc:javadoc
 
 # Legacy javadoc variant using 'package' goal instead of 'verify'.
 # Use for projects that cannot enable the javadoc Maven profile.
@@ -101,7 +105,8 @@
   extends: .test-javadoc
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
-    - mvn -Dmaven.test.skip=true package javadoc:javadoc
+    # Compiled classes come from the Build job's artifacts; only run the javadoc goal, no rebuild.
+    - mvn -Dmaven.test.skip=true javadoc:javadoc
 
 # Unit test variant for projects using a custom Maven settings file.
 .test-java-unit-settings:
@@ -110,7 +115,8 @@
     MAVEN_SETTINGS_PATH: "scripts/mvn-release-settings.xml"
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
-    - mvn -ntp --settings ${MAVEN_SETTINGS_PATH} -DskipITs --fail-at-end test-compile surefire:test -q
+    # Test classes are compiled by the Build job and consumed via artifacts; do not recompile here.
+    - mvn -ntp --settings ${MAVEN_SETTINGS_PATH} -DskipITs --fail-at-end surefire:test -q
 
 .test-java-integration-settings:
   extends: .test-java-integration
@@ -118,7 +124,8 @@
     MAVEN_SETTINGS_PATH: "scripts/mvn-release-settings.xml"
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
-    - mvn -ntp --settings ${MAVEN_SETTINGS_PATH} test-compile failsafe:integration-test failsafe:verify --fail-at-end --errors
+    # Test classes are compiled by the Build job and consumed via artifacts; do not recompile here.
+    - mvn -ntp --settings ${MAVEN_SETTINGS_PATH} failsafe:integration-test failsafe:verify --fail-at-end --errors
 
 # Javadoc variant using the 'package' goal with a Maven settings file.
 # For projects that cannot use the 'verify' goal or the javadoc Maven profile
@@ -129,4 +136,5 @@
     MAVEN_SETTINGS_PATH: "scripts/mvn-release-settings.xml"
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
-    - mvn -ntp --settings ${MAVEN_SETTINGS_PATH} -Dmaven.test.skip=true package javadoc:javadoc
+    # Compiled classes come from the Build job's artifacts; only run the javadoc goal, no rebuild.
+    - mvn -ntp --settings ${MAVEN_SETTINGS_PATH} -Dmaven.test.skip=true javadoc:javadoc
