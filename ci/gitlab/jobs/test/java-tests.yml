@@ -15,17 +15,41 @@
     policy: pull-push
   before_script:
     - 'test -n "${JAVA_MAVEN_IMAGE}" || (echo "JAVA_MAVEN_IMAGE must be set in project .gitlab-ci.yml variables" && exit 1)'
+    - ': "${COVERAGE_MINIMUM:?COVERAGE_MINIMUM must be configured as a CI/CD variable}"'
     - java -version
     - mvn -version
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
-    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -DskipITs --fail-at-end test -q
+    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dcoverage.minimum="${COVERAGE_MINIMUM}" -Djacoco.dataFile=target/jacoco-unit.exec -Djacoco.outputDirectory=target/site/jacoco-unit jacoco:prepare-agent test jacoco:report jacoco:check -q
   artifacts:
     paths:
       - "**/target/surefire-reports/*"
-      - "**/target/site/jacoco/jacoco.xml"
+      - "**/target/site/jacoco-unit/jacoco.xml"
     name: "${CI_PROJECT_NAME}-${CI_BUILD_REF_NAME#*v}-*"
     expire_in: "10 days"
+  after_script:
+    - |
+      report_count=$(find . -type f -path '*/target/site/jacoco-unit/jacoco.xml' -print | wc -l)
+      if [ "$report_count" -gt 0 ]; then
+        find . -type f -path '*/target/site/jacoco-unit/jacoco.xml' -exec cat {} + | awk '
+          /<counter type="INSTRUCTION"/ {
+            line = $0; sub(/.*missed="/, "", line); split(line, missed_value, "\"")
+            line = $0; sub(/.*covered="/, "", line); split(line, covered_value, "\"")
+            report_missed = missed_value[1]; report_covered = covered_value[1]
+          }
+          /<\/report>/ {
+            missed += report_missed; covered += report_covered
+            report_missed = 0; report_covered = 0
+          }
+          END {
+            total = missed + covered
+            if (total > 0) printf "Coverage summary (unit): %.2f%% (%d/%d instructions)\n", 100 * covered / total, covered, total
+            else print "Coverage summary (unit): no JaCoCo instruction counters found"
+          }
+        ' || true
+      else
+        echo "Coverage summary (unit): JaCoCo XML report not found"
+      fi
 
 .test-java-integration:
   image: "${JAVA_MAVEN_IMAGE}"
@@ -49,17 +73,41 @@
     policy: pull-push
   before_script:
     - 'test -n "${JAVA_MAVEN_IMAGE}" || (echo "JAVA_MAVEN_IMAGE must be set in project .gitlab-ci.yml variables" && exit 1)'
+    - ': "${COVERAGE_MINIMUM:?COVERAGE_MINIMUM must be configured as a CI/CD variable}"'
     - java -version
     - mvn -version
   script:
     - docker --host "$DOCKER_HOST" version || true
     # Test classes are compiled by the Build job and consumed via artifacts; do not recompile here.
-    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository failsafe:integration-test failsafe:verify --fail-at-end --errors
+    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dcoverage.minimum="${COVERAGE_MINIMUM}" -Djacoco.dataFile=target/jacoco-it.exec -Djacoco.outputDirectory=target/site/jacoco-it jacoco:prepare-agent failsafe:integration-test failsafe:verify jacoco:report jacoco:check --fail-at-end --errors
   artifacts:
     paths:
-      - "**/target/site/jacoco/jacoco.xml"
+      - "**/target/site/jacoco-it/jacoco.xml"
       - "**/target/failsafe-reports/*"
     expire_in: "1 day"
+  after_script:
+    - |
+      report_count=$(find . -type f -path '*/target/site/jacoco-it/jacoco.xml' -print | wc -l)
+      if [ "$report_count" -gt 0 ]; then
+        find . -type f -path '*/target/site/jacoco-it/jacoco.xml' -exec cat {} + | awk '
+          /<counter type="INSTRUCTION"/ {
+            line = $0; sub(/.*missed="/, "", line); split(line, missed_value, "\"")
+            line = $0; sub(/.*covered="/, "", line); split(line, covered_value, "\"")
+            report_missed = missed_value[1]; report_covered = covered_value[1]
+          }
+          /<\/report>/ {
+            missed += report_missed; covered += report_covered
+            report_missed = 0; report_covered = 0
+          }
+          END {
+            total = missed + covered
+            if (total > 0) printf "Coverage summary (IT): %.2f%% (%d/%d instructions)\n", 100 * covered / total, covered, total
+            else print "Coverage summary (IT): no JaCoCo instruction counters found"
+          }
+        ' || true
+      else
+        echo "Coverage summary (IT): JaCoCo XML report not found"
+      fi
 
 .test-javadoc:
   image: "${JAVA_MAVEN_IMAGE}"
@@ -114,7 +162,7 @@
     MAVEN_SETTINGS_PATH: "scripts/mvn-release-settings.xml"
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
-    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -DskipITs --fail-at-end test -q
+    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -Dcoverage.minimum="${COVERAGE_MINIMUM}" -Djacoco.dataFile=target/jacoco-unit.exec -Djacoco.outputDirectory=target/site/jacoco-unit jacoco:prepare-agent test jacoco:report jacoco:check -q
 
 .test-java-integration-settings:
   extends: .test-java-integration
@@ -122,8 +170,7 @@
     MAVEN_SETTINGS_PATH: "scripts/mvn-release-settings.xml"
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
-    # Test classes are compiled by the Build job and consumed via artifacts; do not recompile here.
-    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository failsafe:integration-test failsafe:verify --fail-at-end --errors
+    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -Dcoverage.minimum="${COVERAGE_MINIMUM}" -Djacoco.dataFile=target/jacoco-it.exec -Djacoco.outputDirectory=target/site/jacoco-it jacoco:prepare-agent failsafe:integration-test failsafe:verify jacoco:report jacoco:check --fail-at-end --errors
 
 # Javadoc variant using the 'package' goal with a Maven settings file.
 # For projects that cannot use the 'verify' goal or the javadoc Maven profile

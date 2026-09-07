@@ -18,6 +18,7 @@ each consuming project sets its own value.
 | `SLACK_WEBHOOK_URL` | Slack incoming webhook | Group |
 | `SONAR_HOST_URL` / `SONAR_TOKEN` | SonarQube server + auth token | Group |
 | `SONAR_PROJECT_KEY` | SonarQube project key | Project |
+| `COVERAGE_MINIMUM` | Minimum unit-test and integration-test coverage ratio, between `0` and `1` | Group/Project |
 | `DOCKER_REGISTRY` | Docker registry host (we only push to our own registry, no Docker Hub) | Group |
 | `DOCKER_REGISTRY_USER` / `DOCKER_REGISTRY_PASSWORD` | Docker registry login for Docker lint and package jobs | Group |
 | `DOCKERHUB_NAMESPACE` | Docker image namespace | Project |
