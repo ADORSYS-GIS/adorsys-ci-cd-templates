@@ -19,8 +19,7 @@
     - mvn -version
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
-    # Test classes are compiled by the Build job and consumed via artifacts; do not recompile here.
-    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -DskipITs --fail-at-end surefire:test -q
+    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -DskipITs --fail-at-end test -q
   artifacts:
     paths:
       - "**/target/surefire-reports/*"
@@ -115,8 +114,7 @@
     MAVEN_SETTINGS_PATH: "scripts/mvn-release-settings.xml"
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
-    # Test classes are compiled by the Build job and consumed via artifacts; do not recompile here.
-    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -DskipITs --fail-at-end surefire:test -q
+    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -DskipITs --fail-at-end test -q
 
 .test-java-integration-settings:
   extends: .test-java-integration
