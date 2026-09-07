@@ -27,7 +27,7 @@
     - java -version
     - mvn -version
   script:
-    - mvn -ntp -Dmaven.repo.local=${CI_PROJECT_DIR}/${MAVEN_REPO_PATH} verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -DskipTests -DskipITs
+    - mvn -ntp -nsu -Dmaven.repo.local=${CI_PROJECT_DIR}/${MAVEN_REPO_PATH} verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -DskipTests -DskipITs
   allow_failure: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -55,7 +55,7 @@
     - java -version
     - mvn -version
   script:
-    - mvn -Dmaven.repo.local=${CI_PROJECT_DIR}/${MAVEN_REPO_PATH} sonar:sonar -Dsonar.qualitygate.wait=true
+    - mvn -nsu -Dmaven.repo.local=${CI_PROJECT_DIR}/${MAVEN_REPO_PATH} sonar:sonar -Dsonar.qualitygate.wait=true
   allow_failure: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -85,7 +85,7 @@
   variables:
     MAVEN_SETTINGS_PATH: "scripts/mvn-release-settings.xml"
   script:
-    - mvn --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=${CI_PROJECT_DIR}/${MAVEN_REPO_PATH} sonar:sonar -Dsonar.qualitygate.wait=true
+    - mvn -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=${CI_PROJECT_DIR}/${MAVEN_REPO_PATH} sonar:sonar -Dsonar.qualitygate.wait=true
 
 # ── Strict gate variants (allow_failure: false) ──────────────────────────────
 # These variants block the pipeline if the SonarQube quality gate fails.
@@ -215,9 +215,9 @@
       }
 
       if [ -n "${MAVEN_SETTINGS_PATH:-}" ]; then
-        mvn -ntp --settings "$MAVEN_SETTINGS_PATH" -Dmaven.repo.local="${CI_PROJECT_DIR}/${MAVEN_REPO_PATH}" verify sonar:sonar -DskipTests -DskipITs -Dsonar.qualitygate.wait=false
+        mvn -ntp -nsu --settings "$MAVEN_SETTINGS_PATH" -Dmaven.repo.local="${CI_PROJECT_DIR}/${MAVEN_REPO_PATH}" verify sonar:sonar -DskipTests -DskipITs -Dsonar.qualitygate.wait=false
       else
-        mvn -ntp -Dmaven.repo.local="${CI_PROJECT_DIR}/${MAVEN_REPO_PATH}" verify sonar:sonar -DskipTests -DskipITs -Dsonar.qualitygate.wait=false
+        mvn -ntp -nsu -Dmaven.repo.local="${CI_PROJECT_DIR}/${MAVEN_REPO_PATH}" verify sonar:sonar -DskipTests -DskipITs -Dsonar.qualitygate.wait=false
       fi
 
       # mvn sonar:sonar writes report-task.txt under target/sonar, not .scannerwork
