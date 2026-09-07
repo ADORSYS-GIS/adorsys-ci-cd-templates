@@ -20,7 +20,8 @@
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
     # Test classes are compiled by the Build job and consumed via artifacts; do not recompile here.
-    - mvn -ntp -DskipITs --fail-at-end surefire:test -q
+    # -o forces resolution from the Build job's local repo only, never a remote/private registry.
+    - mvn -ntp -o -DskipITs --fail-at-end surefire:test -q
   artifacts:
     paths:
       - "**/target/surefire-reports/*"
@@ -55,7 +56,8 @@
   script:
     - docker --host "$DOCKER_HOST" version || true
     # Test classes are compiled by the Build job and consumed via artifacts; do not recompile here.
-    - mvn -ntp failsafe:integration-test failsafe:verify --fail-at-end --errors
+    # -o forces resolution from the Build job's local repo only, never a remote/private registry.
+    - mvn -ntp -o failsafe:integration-test failsafe:verify --fail-at-end --errors
   artifacts:
     paths:
       - "**/target/site/jacoco/jacoco.xml"
@@ -116,7 +118,8 @@
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
     # Test classes are compiled by the Build job and consumed via artifacts; do not recompile here.
-    - mvn -ntp --settings ${MAVEN_SETTINGS_PATH} -DskipITs --fail-at-end surefire:test -q
+    # -o forces resolution from the Build job's local repo only, never a remote/private registry.
+    - mvn -ntp -o --settings ${MAVEN_SETTINGS_PATH} -DskipITs --fail-at-end surefire:test -q
 
 .test-java-integration-settings:
   extends: .test-java-integration
@@ -125,7 +128,8 @@
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
     # Test classes are compiled by the Build job and consumed via artifacts; do not recompile here.
-    - mvn -ntp --settings ${MAVEN_SETTINGS_PATH} failsafe:integration-test failsafe:verify --fail-at-end --errors
+    # -o forces resolution from the Build job's local repo only, never a remote/private registry.
+    - mvn -ntp -o --settings ${MAVEN_SETTINGS_PATH} failsafe:integration-test failsafe:verify --fail-at-end --errors
 
 # Javadoc variant using the 'package' goal with a Maven settings file.
 # For projects that cannot use the 'verify' goal or the javadoc Maven profile
