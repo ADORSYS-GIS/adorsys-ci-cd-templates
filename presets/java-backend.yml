@@ -62,12 +62,18 @@ Build:
 Test (Unit):
   extends: .test-java-unit
   rules: !reference [.pipeline-always-except-schedules, rules]
+  needs:
+    - job: "Build"
+      artifacts: true
 
 Test (Integration):
   extends: .test-java-integration
   tags:
     - aws
   rules: !reference [.pipeline-always-except-schedules, rules]
+  needs:
+    - job: "Build"
+      artifacts: true
 
 Test (Javadoc):
   extends: .test-javadoc
