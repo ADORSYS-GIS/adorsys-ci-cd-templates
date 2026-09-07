@@ -42,6 +42,8 @@ required by that job.
 | `DOCKERHUB_NAMESPACE`, `DOCKER_IMAGE_NAMES` | Multi-image Docker package jobs | Project |
 | `ANGULAR_LINT_TARGET`, `JAVA_LINT_TARGET`, `PMD_MAKE_TARGET`, `DOCKERFILE_MAKE_TARGET` | Corresponding Makefile lint jobs; optional overrides | Project |
 | `LINT_YAML_ENABLED`, `LINT_XML_ENABLED` | YAML/XML lint; optional, default `false` | Project |
+| `TYPECHECK_DIR` | Type-check lint; directory to run detection/checking in; optional, default `.` | Project |
+| `TYPECHECK_COMMAND` | Type-check lint; overrides auto-detection with a custom command; optional | Project |
 | `NPM_AUDIT_DIRS`, `NPM_AUDIT_LEVEL` | npm audit; optional, defaults to `.` and `high` | Project |
 | `TRIVY_IMAGE` | Trivy image scan | Project |
 | `TRIVY_SEVERITY`, `TRIVY_SKIP_FILES`, `TRIVY_TIMEOUT`, `TRIVY_FORMAT` | Trivy scans; optional overrides | Project |

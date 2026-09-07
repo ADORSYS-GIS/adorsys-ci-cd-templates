@@ -47,6 +47,34 @@
             else print "Coverage summary (unit): no JaCoCo instruction counters found"
           }
         ' || true
+        # RS='>' splits the report into single tags, so this works whether or not JaCoCo pretty-prints the XML.
+        find . -type f -path '*/target/site/jacoco-unit/jacoco.xml' -exec cat {} + | awk -v RS='>' -v min="${COVERAGE_MINIMUM}" '
+          BEGIN { threshold = min * 100; printf "Files below the unit coverage minimum (%.2f%%):\n", threshold }
+          /<package[ \t]/ { if (match($0, /name="[^"]*"/)) pkg = substr($0, RSTART + 6, RLENGTH - 7) }
+          /<sourcefile[ \t]/ { if (match($0, /name="[^"]*"/)) src = substr($0, RSTART + 6, RLENGTH - 7) }
+          /<\/sourcefile/ { src = "" }
+          /<counter[ \t]/ {
+            if (src != "" && $0 ~ /type="INSTRUCTION"/) {
+              key = pkg "/" src
+              if (match($0, /missed="[0-9]+"/)) missed[key] += substr($0, RSTART + 8, RLENGTH - 9) + 0
+              if (match($0, /covered="[0-9]+"/)) covered[key] += substr($0, RSTART + 9, RLENGTH - 10) + 0
+            }
+          }
+          END {
+            for (key in missed) {
+              total = missed[key] + covered[key]
+              if (total == 0) continue
+              ratio = 100 * covered[key] / total
+              if (ratio < threshold) {
+                below++
+                printf "  %6.2f%% %s (%d/%d instructions)\n", ratio, key, covered[key], total | "sort -n"
+              }
+            }
+            close("sort -n")
+            if (below == 0) print "  none"
+            printf "Total files below the unit coverage minimum: %d\n", below + 0
+          }
+        ' || true
       else
         echo "Coverage summary (unit): JaCoCo XML report not found"
       fi
@@ -103,6 +131,34 @@
             total = missed + covered
             if (total > 0) printf "Coverage summary (IT): %.2f%% (%d/%d instructions)\n", 100 * covered / total, covered, total
             else print "Coverage summary (IT): no JaCoCo instruction counters found"
+          }
+        ' || true
+        # RS='>' splits the report into single tags, so this works whether or not JaCoCo pretty-prints the XML.
+        find . -type f -path '*/target/site/jacoco-it/jacoco.xml' -exec cat {} + | awk -v RS='>' -v min="${COVERAGE_MINIMUM}" '
+          BEGIN { threshold = min * 100; printf "Files below the integration coverage minimum (%.2f%%):\n", threshold }
+          /<package[ \t]/ { if (match($0, /name="[^"]*"/)) pkg = substr($0, RSTART + 6, RLENGTH - 7) }
+          /<sourcefile[ \t]/ { if (match($0, /name="[^"]*"/)) src = substr($0, RSTART + 6, RLENGTH - 7) }
+          /<\/sourcefile/ { src = "" }
+          /<counter[ \t]/ {
+            if (src != "" && $0 ~ /type="INSTRUCTION"/) {
+              key = pkg "/" src
+              if (match($0, /missed="[0-9]+"/)) missed[key] += substr($0, RSTART + 8, RLENGTH - 9) + 0
+              if (match($0, /covered="[0-9]+"/)) covered[key] += substr($0, RSTART + 9, RLENGTH - 10) + 0
+            }
+          }
+          END {
+            for (key in missed) {
+              total = missed[key] + covered[key]
+              if (total == 0) continue
+              ratio = 100 * covered[key] / total
+              if (ratio < threshold) {
+                below++
+                printf "  %6.2f%% %s (%d/%d instructions)\n", ratio, key, covered[key], total | "sort -n"
+              }
+            }
+            close("sort -n")
+            if (below == 0) print "  none"
+            printf "Total files below the integration coverage minimum: %d\n", below + 0
           }
         ' || true
       else
