@@ -24,13 +24,13 @@
   extends: .build-java-maven-base
   stage: Compile
   script:
-    - mvn -ntp -DskipITs -DskipTests -Dci.build.number=Build\:${CI_PIPELINE_ID} clean install
+    - mvn -ntp -nsu -DskipITs -DskipTests -Dci.build.number=Build\:${CI_PIPELINE_ID} clean install
 
 .build-java-maven-with-artifacts:
   extends: .build-java-maven-base
   stage: Compile
   script:
-    - mvn -ntp -DskipITs -DskipTests -Dci.build.number=Build\:${CI_PIPELINE_ID} clean install
+    - mvn -ntp -nsu -DskipITs -DskipTests -Dci.build.number=Build\:${CI_PIPELINE_ID} clean install
   artifacts:
     paths:
       - "**/target/classes"
@@ -43,7 +43,7 @@
   extends: .build-java-maven-base
   stage: Compile
   script:
-    - mvn -DskipTests clean install -Dci.build.number=Build\:${CI_PIPELINE_ID}
+    - mvn -nsu -DskipTests clean install -Dci.build.number=Build\:${CI_PIPELINE_ID}
 
 .build-java-maven-settings:
   extends: .build-java-maven-base
@@ -51,7 +51,7 @@
   variables:
     MAVEN_SETTINGS_PATH: "scripts/mvn-release-settings.xml"
   script:
-    - mvn -ntp -DskipITs -DskipTests --settings ${MAVEN_SETTINGS_PATH} -Dci.build.number=Build\:${CI_PIPELINE_ID} clean install
+    - mvn -ntp -nsu -DskipITs -DskipTests --settings ${MAVEN_SETTINGS_PATH} -Dci.build.number=Build\:${CI_PIPELINE_ID} clean install
 
 # Mixin: generates ~/.m2/settings.xml at runtime from CI_JOB_TOKEN.
 # Use for projects that authenticate to private Maven registries via deploy

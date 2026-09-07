@@ -8,7 +8,7 @@
   script:
     - apt update && apt install make -yq
     - echo "Test java code for PMD and CPD"
-    - mvn -ntp -Dmaven.test.skip=true package pmd:check pmd:cpd-check
+    - mvn -ntp -nsu -Dmaven.test.skip=true package pmd:check pmd:cpd-check
   cache: {}
   artifacts:
     paths:
@@ -25,7 +25,7 @@
   script:
     - apt update && apt install make -yq
     - echo "Test java code for PMD and CPD"
-    - mvn -ntp --settings scripts/mvn-release-settings.xml -Dmaven.test.skip=true package pmd:check pmd:cpd-check
+    - mvn -ntp -nsu --settings scripts/mvn-release-settings.xml -Dmaven.test.skip=true package pmd:check pmd:cpd-check
   cache: {}
   artifacts:
     paths:
@@ -66,7 +66,7 @@
   script:
     - apt update && apt install make -yq
     - echo "Test java code for PMD (CPD excluded by design)"
-    - mvn -ntp -Dmaven.test.skip=true package pmd:check
+    - mvn -ntp -nsu -Dmaven.test.skip=true package pmd:check
   cache: {}
   artifacts:
     paths:
@@ -81,4 +81,4 @@
   script:
     - apt update && apt install make -yq
     - echo "Test java code for PMD only (CPD excluded by design)"
-    - mvn -ntp --settings scripts/mvn-release-settings.xml -Dmaven.test.skip=true package pmd:check
+    - mvn -ntp -nsu --settings scripts/mvn-release-settings.xml -Dmaven.test.skip=true package pmd:check
