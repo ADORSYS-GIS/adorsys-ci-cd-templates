@@ -74,6 +74,7 @@ Build (Multi-Module):
   artifacts:
     paths:
       - "**/target/classes"
+      - "**/target/resources/**"
       - "**/target/*.jar"
     name: "${CI_PROJECT_NAME}-${CI_BUILD_REF_NAME#*v}"
     expire_in: "1 day"
@@ -83,10 +84,16 @@ Build (Multi-Module):
 Test (Unit):
   extends: .test-java-unit
   rules: !reference [.pipeline-always-except-schedules, rules]
+  needs:
+    - job: "Build (Multi-Module)"
+      artifacts: true
 
 Test (Integration):
-  extends: .test-java-integration-maven
+  extends: .test-java-integration
   rules: !reference [.pipeline-always-except-schedules, rules]
+  needs:
+    - job: "Build (Multi-Module)"
+      artifacts: true
 
 Test (Javadoc):
   extends: .test-javadoc
