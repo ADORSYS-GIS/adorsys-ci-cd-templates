@@ -156,10 +156,13 @@ include:
 
 # ── On-push security rules with rollback guard (reusable via !reference) ─────
 # Use this for soft-fail security jobs that should run on normal non-protected
-# push/MR pipelines, but must be skipped for schedules and rollback runs.
+# push pipelines, but must be skipped for merge requests, schedules, and
+# rollback runs.
 .on-push-security-with-rollback-guard:
   rules:
     - if: '$MAVEN_RELEASE_ROLLBACK == "true"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       when: never
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
       when: never
