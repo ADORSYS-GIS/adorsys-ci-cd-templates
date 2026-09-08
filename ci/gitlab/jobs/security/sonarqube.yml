@@ -312,19 +312,13 @@
       echo "SonarQube Java scan passed: no unresolved blocker/critical/major bugs or vulnerabilities."
   allow_failure: false
   rules:
+    - if: '$MAVEN_RELEASE_ROLLBACK == "true"'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
       when: never
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_SOURCE_PROJECT_ID != $CI_PROJECT_ID'
-      when: never
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME =~ /^support-[0-9]+\.x$/ && $SONAR_ENABLE_SUPPORT_BRANCH_ANALYSIS != "true"'
-      when: never
-    - if: '$CI_PIPELINE_SOURCE != "merge_request_event" && $CI_COMMIT_BRANCH =~ /^support-[0-9]+\.x$/ && $SONAR_ENABLE_SUPPORT_BRANCH_ANALYSIS != "true"'
-      when: never
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"'
       when: on_success
-    - if: '$CI_COMMIT_BRANCH == "develop"'
-      when: on_success
-    - if: '$CI_COMMIT_BRANCH =~ /^support-[0-9]+\.x$/'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_PROTECTED == "true"'
       when: on_success
     - when: never
 
