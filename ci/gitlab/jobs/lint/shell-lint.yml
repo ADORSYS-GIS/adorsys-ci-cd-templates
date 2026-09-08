@@ -20,9 +20,11 @@
     - |
       set -eu
       : "${ADORSYS_CI_TEMPLATES_PROJECT:?Set ADORSYS_CI_TEMPLATES_PROJECT as a project/group CI/CD variable}"
+      : "${GITLAB_TOKEN:?Set GITLAB_TOKEN as a project/group CI/CD variable with access to the CI templates project}"
       PROJECT_ENC=$(printf '%s' "$ADORSYS_CI_TEMPLATES_PROJECT" | sed 's#/#%2F#g')
       SCRIPT_URL="${CI_API_V4_URL}/projects/${PROJECT_ENC}/repository/files/ci%2Fgitlab%2Fscripts%2Fci%2Flint-shell.sh/raw?ref=${ADORSYS_CI_TEMPLATES_REF}"
-      curl -sSL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "$SCRIPT_URL" -o /tmp/lint-shell.sh
+      AUTH_HEADER="PRIVATE-TOKEN: ${GITLAB_TOKEN}"
+      curl --fail --silent --show-error --location --header "$AUTH_HEADER" "$SCRIPT_URL" -o /tmp/lint-shell.sh
       chmod +x /tmp/lint-shell.sh
       ARGS="--severity ${SHELL_LINT_SEVERITY}"
       [ "${SHELL_LINT_STRICT}" = "true" ] && ARGS="${ARGS} --strict"
