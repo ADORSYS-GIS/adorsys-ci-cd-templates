@@ -106,8 +106,7 @@
     - mvn -version
   script:
     - docker --host "$DOCKER_HOST" version || true
-    # Test classes are compiled by the Build job and consumed via artifacts; do not recompile here.
-    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dcoverage.minimum="${COVERAGE_MINIMUM}" -Djacoco.dataFile=target/jacoco-it.exec -Djacoco.outputDirectory=target/site/jacoco-it jacoco:prepare-agent failsafe:integration-test failsafe:verify jacoco:report jacoco:check --fail-at-end --errors
+    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dcoverage.minimum="${COVERAGE_MINIMUM}" -Djacoco.dataFile=target/jacoco-it.exec -Djacoco.outputDirectory=target/site/jacoco-it -Dsurefire.skip=true -DskipITs=false verify jacoco:report jacoco:check --fail-at-end --errors
   artifacts:
     paths:
       - "**/target/site/jacoco-it/jacoco.xml"
@@ -183,8 +182,7 @@
     - mvn -version
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
-    # Compiled classes come from the Build job's artifacts; only run the javadoc goal, no rebuild.
-    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dmaven.test.skip=true -Pjavadoc javadoc:javadoc
+    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -DskipTests -DskipITs package javadoc:javadoc
   artifacts:
     paths:
       - "**/target/site/*"
@@ -199,8 +197,7 @@
     MAVEN_SETTINGS_PATH: "scripts/mvn-release-settings.xml"
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
-    # Compiled classes come from the Build job's artifacts; only run the javadoc goal, no rebuild.
-    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -Dmaven.test.skip=true -Pjavadoc javadoc:javadoc
+    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -DskipTests -DskipITs package javadoc:javadoc
 
 # Legacy javadoc variant using 'package' goal instead of 'verify'.
 # Use for projects that cannot enable the javadoc Maven profile.
@@ -208,8 +205,7 @@
   extends: .test-javadoc
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
-    # Compiled classes come from the Build job's artifacts; only run the javadoc goal, no rebuild.
-    - mvn -nsu -Dmaven.repo.local=.m2/repository -Dmaven.test.skip=true javadoc:javadoc
+    - mvn -nsu -Dmaven.repo.local=.m2/repository -DskipTests -DskipITs package javadoc:javadoc
 
 # Unit test variant for projects using a custom Maven settings file.
 .test-java-unit-settings:
@@ -226,7 +222,7 @@
     MAVEN_SETTINGS_PATH: "scripts/mvn-release-settings.xml"
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
-    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -Dcoverage.minimum="${COVERAGE_MINIMUM}" -Djacoco.dataFile=target/jacoco-it.exec -Djacoco.outputDirectory=target/site/jacoco-it jacoco:prepare-agent failsafe:integration-test failsafe:verify jacoco:report jacoco:check --fail-at-end --errors
+    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -Dcoverage.minimum="${COVERAGE_MINIMUM}" -Djacoco.dataFile=target/jacoco-it.exec -Djacoco.outputDirectory=target/site/jacoco-it -Dsurefire.skip=true -DskipITs=false verify jacoco:report jacoco:check --fail-at-end --errors
 
 # Javadoc variant using the 'package' goal with a Maven settings file.
 # For projects that cannot use the 'verify' goal or the javadoc Maven profile
@@ -237,5 +233,4 @@
     MAVEN_SETTINGS_PATH: "scripts/mvn-release-settings.xml"
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
-    # Compiled classes come from the Build job's artifacts; only run the javadoc goal, no rebuild.
-    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -Dmaven.test.skip=true javadoc:javadoc
+    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -DskipTests -DskipITs package javadoc:javadoc
