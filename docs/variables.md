@@ -18,6 +18,7 @@ each consuming project sets its own value.
 | `SLACK_WEBHOOK_URL` | Slack incoming webhook | Group |
 | `SONAR_HOST_URL` / `SONAR_TOKEN` | SonarQube server + auth token | Group |
 | `SONAR_PROJECT_KEY` | SonarQube project key | Project |
+| `COVERAGE_MINIMUM` | Minimum unit-test and integration-test coverage ratio, between `0` and `1` | Group/Project |
 | `DOCKER_REGISTRY` | Docker registry host (we only push to our own registry, no Docker Hub) | Group |
 | `DOCKER_REGISTRY_USER` / `DOCKER_REGISTRY_PASSWORD` | Docker registry login for Docker lint and package jobs | Group |
 | `DOCKERHUB_NAMESPACE` | Docker image namespace | Project |
@@ -41,6 +42,8 @@ required by that job.
 | `DOCKERHUB_NAMESPACE`, `DOCKER_IMAGE_NAMES` | Multi-image Docker package jobs | Project |
 | `ANGULAR_LINT_TARGET`, `JAVA_LINT_TARGET`, `PMD_MAKE_TARGET`, `DOCKERFILE_MAKE_TARGET` | Corresponding Makefile lint jobs; optional overrides | Project |
 | `LINT_YAML_ENABLED`, `LINT_XML_ENABLED` | YAML/XML lint; optional, default `false` | Project |
+| `TYPECHECK_DIR` | Type-check lint; directory to run detection/checking in; optional, default `.` | Project |
+| `TYPECHECK_COMMAND` | Type-check lint; overrides auto-detection with a custom command; optional | Project |
 | `NPM_AUDIT_DIRS`, `NPM_AUDIT_LEVEL` | npm audit; optional, defaults to `.` and `high` | Project |
 | `TRIVY_IMAGE` | Trivy image scan | Project |
 | `TRIVY_SEVERITY`, `TRIVY_SKIP_FILES`, `TRIVY_TIMEOUT`, `TRIVY_FORMAT` | Trivy scans; optional overrides | Project |
