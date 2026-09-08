@@ -20,7 +20,7 @@
     - mvn -version
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
-    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dcoverage.minimum="${COVERAGE_MINIMUM}" -Djacoco.dataFile=target/jacoco-unit.exec -Djacoco.outputDirectory=target/site/jacoco-unit jacoco:prepare-agent test jacoco:report jacoco:check -q
+    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dcoverage.minimum="${COVERAGE_MINIMUM}" -Djacoco.dataFile=target/jacoco-unit.exec -Djacoco.outputDirectory=target/site/jacoco-unit jacoco:prepare-agent test jacoco:report jacoco:check@jacoco-check -q
   artifacts:
     paths:
       - "**/target/surefire-reports/*"
@@ -106,7 +106,7 @@
     - mvn -version
   script:
     - docker --host "$DOCKER_HOST" version || true
-    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dcoverage.minimum="${COVERAGE_MINIMUM}" -Djacoco.dataFile=target/jacoco-it.exec -Djacoco.outputDirectory=target/site/jacoco-it -Dsurefire.skip=true -DskipITs=false verify jacoco:report jacoco:check --fail-at-end --errors
+    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dcoverage.minimum="${COVERAGE_MINIMUM}" -Djacoco.dataFile=target/jacoco-it.exec -Djacoco.outputDirectory=target/site/jacoco-it -Dsurefire.skip=true -DskipITs=false verify jacoco:report jacoco:check@jacoco-check --fail-at-end --errors
   artifacts:
     paths:
       - "**/target/site/jacoco-it/jacoco.xml"
@@ -214,7 +214,7 @@
     MAVEN_SETTINGS_PATH: "scripts/mvn-release-settings.xml"
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
-    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -Dcoverage.minimum="${COVERAGE_MINIMUM}" -Djacoco.dataFile=target/jacoco-unit.exec -Djacoco.outputDirectory=target/site/jacoco-unit jacoco:prepare-agent test jacoco:report jacoco:check -q
+    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -Dcoverage.minimum="${COVERAGE_MINIMUM}" -Djacoco.dataFile=target/jacoco-unit.exec -Djacoco.outputDirectory=target/site/jacoco-unit jacoco:prepare-agent test jacoco:report jacoco:check@jacoco-check -q
 
 .test-java-integration-settings:
   extends: .test-java-integration
@@ -222,7 +222,7 @@
     MAVEN_SETTINGS_PATH: "scripts/mvn-release-settings.xml"
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
-    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -Dcoverage.minimum="${COVERAGE_MINIMUM}" -Djacoco.dataFile=target/jacoco-it.exec -Djacoco.outputDirectory=target/site/jacoco-it -Dsurefire.skip=true -DskipITs=false verify jacoco:report jacoco:check --fail-at-end --errors
+    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -Dcoverage.minimum="${COVERAGE_MINIMUM}" -Djacoco.dataFile=target/jacoco-it.exec -Djacoco.outputDirectory=target/site/jacoco-it -Dsurefire.skip=true -DskipITs=false verify jacoco:report jacoco:check@jacoco-check --fail-at-end --errors
 
 # Javadoc variant using the 'package' goal with a Maven settings file.
 # For projects that cannot use the 'verify' goal or the javadoc Maven profile
