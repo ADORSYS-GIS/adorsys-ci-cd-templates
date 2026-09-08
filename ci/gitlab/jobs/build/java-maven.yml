@@ -195,3 +195,59 @@
     - if: '$CI_COMMIT_REF_PROTECTED == "true"'
       when: on_success
     - when: never
+
+# Soft security jobs: run on merge requests and non-protected pushes, but not
+# on protected branches, schedules, or rollback pipelines.
+.pipeline-security-soft:
+  rules:
+    - if: '$MAVEN_RELEASE_ROLLBACK == "true"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED != "true"'
+      when: on_success
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_PROTECTED != "true"'
+      when: on_success
+    - when: never
+
+# Hard security gates: run only on protected pushes and MRs targeting a
+# protected branch. Security-scan schedules remain hard gates.
+.pipeline-security-gate:
+  rules:
+    - if: '$MAVEN_RELEASE_ROLLBACK == "true"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && ($SCHEDULE_TYPE == "security-scan")'
+      when: always
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"'
+      when: on_success
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_PROTECTED == "true"'
+      when: on_success
+    - when: never
+
+# Single execution policy for every security scanner.
+# Protected pushes and protected-target MRs are hard gates; non-protected
+# pushes and non-protected-target MRs are soft-fail; rollback runs are skipped.
+.pipeline-security-all:
+  rules:
+    - if: '$MAVEN_RELEASE_ROLLBACK == "true"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && ($SCHEDULE_TYPE == "security-scan")'
+      when: always
+      allow_failure: false
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"'
+      when: on_success
+      allow_failure: false
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_PROTECTED == "true"'
+      when: on_success
+      allow_failure: false
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED != "true"'
+      when: on_success
+      allow_failure: true
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_PROTECTED != "true"'
+      when: on_success
+      allow_failure: true
+    - when: never
