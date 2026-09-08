@@ -7,6 +7,8 @@ The project repositories use Gitleaks to scan staged changes before every commit
 From the project root, install Gitleaks, then run:
 
 ```bash
+sudo apt update
+sudo apt install gitleaks
 ./scripts/branch_commits/setup_hooks.sh
 ```
 
@@ -19,4 +21,4 @@ Run this in each project repository:
 - Gitleaks not being installed also stops the commit.
 - Fix or unstage the finding, then retry the commit.
 
-The hook scans staged changes only.
+The hook uses Gitleaks' staged scan and scans staged changes only.
