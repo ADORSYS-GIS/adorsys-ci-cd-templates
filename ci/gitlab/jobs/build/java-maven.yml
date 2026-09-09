@@ -1,6 +1,14 @@
 # Java Maven build job template
 # Compiles Java projects using a project-provided Maven image
 
+# Reusable branch regexes — single source of truth for develop/support matching.
+# Support branches use EVEN-numbered majors only (support-2.x, support-20.x — not
+# support-3.x), matching the release tooling's "support majors must be even" rule.
+# The v-prefix is optional (e.g. v2develop, v2support-4.x).
+variables:
+  DEVELOP_BRANCH_REGEX: '/^(v[0-9]+)?develop$/'
+  SUPPORT_BRANCH_REGEX: '/^(v[0-9]+)?support-[0-9]*[02468]\.x$/'
+
 .build-java-maven-base:
   image: "${JAVA_MAVEN_IMAGE}"
   retry:
@@ -142,6 +150,21 @@
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
       when: never
     - if: '$CI_COMMIT_BRANCH == "develop"'
+      when: on_success
+    - when: never
+
+# Runs on the develop line AND support maintenance branches (support-N.x,
+# optionally v-prefixed, e.g. v2support-3.x) — used to publish per-branch
+# SNAPSHOT artifacts. Skips schedules, tags, and feature branches.
+.pipeline-develop-and-support:
+  rules:
+    - if: '$MAVEN_RELEASE_ROLLBACK == "true"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH =~ $DEVELOP_BRANCH_REGEX'
+      when: on_success
+    - if: '$CI_COMMIT_BRANCH =~ $SUPPORT_BRANCH_REGEX'
       when: on_success
     - when: never
 
