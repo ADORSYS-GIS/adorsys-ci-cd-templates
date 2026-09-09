@@ -8,8 +8,14 @@
   script:
     - apt update && apt install make -yq
     - echo "Test java code for PMD and CPD"
-    - mvn -ntp -nsu -Dmaven.test.skip=true package pmd:check pmd:cpd-check
-  cache: {}
+    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dmaven.test.skip=true pmd:check pmd:cpd-check
+  # Reuse the .m2 repository populated by the build job (via cache) and the
+  # compiled sources it produced (via needs:artifacts) — no registry rebuild.
+  cache:
+    key: "maven-cache-$CI_COMMIT_REF_SLUG"
+    paths:
+      - ".m2/repository"
+    policy: pull
   artifacts:
     paths:
       - "qa/pmd/pmd-ruleset.xml"
@@ -25,8 +31,14 @@
   script:
     - apt update && apt install make -yq
     - echo "Test java code for PMD and CPD"
-    - mvn -ntp -nsu --settings scripts/mvn-release-settings.xml -Dmaven.test.skip=true package pmd:check pmd:cpd-check
-  cache: {}
+    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository --settings scripts/mvn-release-settings.xml -Dmaven.test.skip=true pmd:check pmd:cpd-check
+  # Reuse the .m2 repository populated by the build job (via cache) and the
+  # compiled sources it produced (via needs:artifacts) — no registry rebuild.
+  cache:
+    key: "maven-cache-$CI_COMMIT_REF_SLUG"
+    paths:
+      - ".m2/repository"
+    policy: pull
   artifacts:
     paths:
       - "qa/pmd/pmd-ruleset.xml"
@@ -46,7 +58,13 @@
   script:
     - apt update && apt install make -yq
     - make ${PMD_MAKE_TARGET}
-  cache: {}
+  # Reuse the .m2 repository populated by the build job (via cache) and the
+  # compiled sources it produced (via needs:artifacts) — no registry rebuild.
+  cache:
+    key: "maven-cache-$CI_COMMIT_REF_SLUG"
+    paths:
+      - ".m2/repository"
+    policy: pull
   artifacts:
     paths:
       - "qa/pmd/pmd-ruleset.xml"
@@ -66,8 +84,14 @@
   script:
     - apt update && apt install make -yq
     - echo "Test java code for PMD (CPD excluded by design)"
-    - mvn -ntp -nsu -Dmaven.test.skip=true package pmd:check
-  cache: {}
+    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dmaven.test.skip=true pmd:check
+  # Reuse the .m2 repository populated by the build job (via cache) and the
+  # compiled sources it produced (via needs:artifacts) — no registry rebuild.
+  cache:
+    key: "maven-cache-$CI_COMMIT_REF_SLUG"
+    paths:
+      - ".m2/repository"
+    policy: pull
   artifacts:
     paths:
       - "qa/pmd/pmd-ruleset.xml"
@@ -81,4 +105,4 @@
   script:
     - apt update && apt install make -yq
     - echo "Test java code for PMD only (CPD excluded by design)"
-    - mvn -ntp -nsu --settings scripts/mvn-release-settings.xml -Dmaven.test.skip=true package pmd:check
+    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository --settings scripts/mvn-release-settings.xml -Dmaven.test.skip=true pmd:check
