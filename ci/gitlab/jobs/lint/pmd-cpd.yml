@@ -8,6 +8,9 @@
   script:
     - apt update && apt install make -yq
     - echo "Test java code for PMD and CPD"
+    # Publish the Build job's restored classes as reactor SNAPSHOTs to .m2 (no
+    # javac) so PMD resolves inter-module deps from the build artifacts.
+    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dmaven.main.skip=true -Dmaven.test.skip=true install
     - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dmaven.test.skip=true pmd:check pmd:cpd-check
   # Reuse the .m2 repository populated by the build job (via cache) and the
   # compiled sources it produced (via needs:artifacts) — no registry rebuild.
@@ -31,6 +34,9 @@
   script:
     - apt update && apt install make -yq
     - echo "Test java code for PMD and CPD"
+    # Publish the Build job's restored classes as reactor SNAPSHOTs to .m2 (no
+    # javac) so PMD resolves inter-module deps from the build artifacts.
+    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository --settings scripts/mvn-release-settings.xml -Dmaven.main.skip=true -Dmaven.test.skip=true install
     - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository --settings scripts/mvn-release-settings.xml -Dmaven.test.skip=true pmd:check pmd:cpd-check
   # Reuse the .m2 repository populated by the build job (via cache) and the
   # compiled sources it produced (via needs:artifacts) — no registry rebuild.
@@ -84,6 +90,9 @@
   script:
     - apt update && apt install make -yq
     - echo "Test java code for PMD (CPD excluded by design)"
+    # Publish the Build job's restored classes as reactor SNAPSHOTs to .m2 (no
+    # javac) so PMD resolves inter-module deps from the build artifacts.
+    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dmaven.main.skip=true -Dmaven.test.skip=true install
     - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dmaven.test.skip=true pmd:check
   # Reuse the .m2 repository populated by the build job (via cache) and the
   # compiled sources it produced (via needs:artifacts) — no registry rebuild.
@@ -105,4 +114,7 @@
   script:
     - apt update && apt install make -yq
     - echo "Test java code for PMD only (CPD excluded by design)"
+    # Publish the Build job's restored classes as reactor SNAPSHOTs to .m2 (no
+    # javac) so PMD resolves inter-module deps from the build artifacts.
+    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository --settings scripts/mvn-release-settings.xml -Dmaven.main.skip=true -Dmaven.test.skip=true install
     - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository --settings scripts/mvn-release-settings.xml -Dmaven.test.skip=true pmd:check
