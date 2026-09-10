@@ -55,6 +55,9 @@
     - java -version
     - mvn -version
   script:
+    # Reuse the Build job's own reactor SNAPSHOTs from its restored classes (no
+    # javac); only cross-project deps are fetched from the registry.
+    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dmaven.main.skip=true -Dmaven.test.skip=true install
     - mvn -nsu -Dmaven.repo.local=.m2/repository sonar:sonar -Dsonar.qualitygate.wait=true
   allow_failure: true
   rules:
@@ -85,6 +88,9 @@
   variables:
     MAVEN_SETTINGS_PATH: "scripts/mvn-release-settings.xml"
   script:
+    # Reuse the Build job's own reactor SNAPSHOTs from its restored classes (no
+    # javac); only cross-project deps are fetched from the registry.
+    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -Dmaven.main.skip=true -Dmaven.test.skip=true install
     - mvn -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository sonar:sonar -Dsonar.qualitygate.wait=true
 
 # ── Strict gate variants (allow_failure: false) ──────────────────────────────
@@ -214,10 +220,14 @@
         printf '%s' "$body"
       }
 
+      # Reuse the Build job's own reactor SNAPSHOTs from its restored classes (no
+      # javac); only cross-project deps come from the registry.
       if [ -n "${MAVEN_SETTINGS_PATH:-}" ]; then
-        mvn -ntp -nsu --settings "$MAVEN_SETTINGS_PATH" -Dmaven.repo.local=.m2/repository verify sonar:sonar -DskipTests -DskipITs -Dsonar.qualitygate.wait=false
+        mvn -ntp -nsu --settings "$MAVEN_SETTINGS_PATH" -Dmaven.repo.local=.m2/repository -Dmaven.main.skip=true -Dmaven.test.skip=true install
+        mvn -ntp -nsu --settings "$MAVEN_SETTINGS_PATH" -Dmaven.repo.local=.m2/repository sonar:sonar -DskipTests -DskipITs -Dsonar.qualitygate.wait=false
       else
-        mvn -ntp -nsu -Dmaven.repo.local=.m2/repository verify sonar:sonar -DskipTests -DskipITs -Dsonar.qualitygate.wait=false
+        mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dmaven.main.skip=true -Dmaven.test.skip=true install
+        mvn -ntp -nsu -Dmaven.repo.local=.m2/repository sonar:sonar -DskipTests -DskipITs -Dsonar.qualitygate.wait=false
       fi
 
       # mvn sonar:sonar writes report-task.txt under target/sonar, not .scannerwork

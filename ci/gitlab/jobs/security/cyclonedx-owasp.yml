@@ -37,6 +37,9 @@ include:
     - java -version
     - mvn -version
   script:
+    # Reuse the Build job's own reactor SNAPSHOTs from its restored classes (no
+    # javac); only cross-project deps are fetched from the registry.
+    - mvn -B -ntp -nsu -Dmaven.repo.local=.m2/repository -Dmaven.main.skip=true -Dmaven.test.skip=true install
     - mvn -B -ntp -nsu -DnvdApiKey=$NVD_API_KEY -DdataDirectory=dependency-check-data org.cyclonedx:cyclonedx-maven-plugin:makeBom
     - |
       set +e
@@ -101,6 +104,9 @@ include:
     - java -version
     - mvn -version
   script:
+    # Reuse the Build job's own reactor SNAPSHOTs from its restored classes (no
+    # javac); only cross-project deps are fetched from the registry.
+    - mvn -B -ntp -nsu --settings scripts/mvn-release-settings.xml -Dmaven.repo.local=.m2/repository -Dmaven.main.skip=true -Dmaven.test.skip=true install
     - mvn -B -ntp -nsu --settings scripts/mvn-release-settings.xml -DnvdApiKey=$NVD_API_KEY -DdataDirectory=dependency-check-data org.cyclonedx:cyclonedx-maven-plugin:makeBom
     - |
       set +e

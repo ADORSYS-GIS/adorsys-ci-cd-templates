@@ -23,6 +23,9 @@ include:
     - java -version
     - mvn -version
   script:
+    # Reuse the Build job's own reactor SNAPSHOTs from its restored classes (no
+    # javac); only cross-project deps are fetched from the registry.
+    - mvn -B -ntp -nsu -Dmaven.repo.local=.m2/repository -Dmaven.main.skip=true -Dmaven.test.skip=true install
     - |
       set +e
       mvn -B -ntp -nsu -DnvdApiKey=$NVD_API_KEY -DfailBuildOnCVSS=7 \
@@ -85,6 +88,9 @@ include:
     - java -version
     - mvn -version
   script:
+    # Reuse the Build job's own reactor SNAPSHOTs from its restored classes (no
+    # javac); only cross-project deps are fetched from the registry.
+    - mvn -B -ntp -nsu --settings scripts/mvn-release-settings.xml -Dmaven.repo.local=.m2/repository -Dmaven.main.skip=true -Dmaven.test.skip=true install
     - |
       set +e
       mvn -B -ntp -nsu --settings scripts/mvn-release-settings.xml \
