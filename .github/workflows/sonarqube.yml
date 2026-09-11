@@ -3,6 +3,10 @@ name: SonarQube Scan
 on:
   workflow_call:
     inputs:
+      runner:
+        default: "ubuntu-latest"
+        required: false
+        type: string
       project-key:
         required: true
         type: string
@@ -26,7 +30,7 @@ permissions:
 jobs:
   scan:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - uses: actions/checkout@v4
         with:

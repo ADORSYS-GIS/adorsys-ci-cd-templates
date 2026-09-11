@@ -3,6 +3,10 @@ name: Lint Python
 on:
   workflow_call:
     inputs:
+      runner:
+        default: "ubuntu-latest"
+        required: false
+        type: string
       working-directory:
         default: "."
         required: false
@@ -13,7 +17,7 @@ on:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
