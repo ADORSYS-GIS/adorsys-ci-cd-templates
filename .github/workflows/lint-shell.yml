@@ -3,6 +3,10 @@ name: Lint Shell
 on:
   workflow_call:
     inputs:
+      runner:
+        default: "ubuntu-latest"
+        required: false
+        type: string
       path:
         default: "."
         required: false
@@ -10,7 +14,7 @@ on:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install --yes shellcheck

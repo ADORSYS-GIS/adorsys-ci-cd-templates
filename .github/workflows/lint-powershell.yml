@@ -3,6 +3,10 @@ name: Lint PowerShell
 on:
   workflow_call:
     inputs:
+      runner:
+        default: "windows-latest"
+        required: false
+        type: string
       path:
         default: "."
         required: false
@@ -10,7 +14,7 @@ on:
 
 jobs:
   lint:
-    runs-on: windows-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - uses: actions/checkout@v4
       - shell: pwsh
