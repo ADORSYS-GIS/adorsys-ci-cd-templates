@@ -152,6 +152,8 @@ include:
 #
 .feature-branch-security-only:
   rules:
+    - if: '$MAVEN_RELEASE_RUN == "true"'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
       when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -164,6 +166,8 @@ include:
 # Use this for soft-fail security jobs on non-protected pushes and MRs.
 .on-push-security-with-rollback-guard:
   rules:
+    - if: '$MAVEN_RELEASE_RUN == "true"'
+      when: never
     - if: '$MAVEN_RELEASE_ROLLBACK == "true"'
       when: never
     - if: '$CI_PIPELINE_SOURCE == "schedule"'

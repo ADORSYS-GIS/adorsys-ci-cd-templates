@@ -9,6 +9,8 @@
     ADORSYS_CI_TEMPLATES_PROJECT: ""
     ADORSYS_CI_TEMPLATES_REF: "main"
   rules:
+    - if: '$MAVEN_RELEASE_RUN == "true"'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "push"'
       when: always
   before_script:
