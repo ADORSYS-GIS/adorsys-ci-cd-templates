@@ -7,6 +7,8 @@
   image: alpine:latest
   allow_failure: true
   rules:
+    - if: '$MAVEN_RELEASE_RUN == "true"'
+      when: never
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
       when: never
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
