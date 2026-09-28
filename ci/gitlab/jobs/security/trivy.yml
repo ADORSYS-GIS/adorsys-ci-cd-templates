@@ -2,7 +2,36 @@
 # Scans Maven dependencies (filesystem mode) and Dockerfiles (config mode)
 # for HIGH and CRITICAL vulnerabilities using Aqua Trivy.
 
+# Shared DB/registry resilience. The default DB sources (mirror.gcr.io + GHCR)
+# regularly fail in CI: the GCR mirror can serve stale/unknown blobs and GHCR
+# rate-limits anonymous pulls (DENIED). Prefer AWS ECR Public (no anonymous
+# rate limits) with the originals as fallbacks, and cache the downloaded DBs.
+.trivy-db-repos:
+  variables:
+    TRIVY_CACHE_DIR: ".trivycache/"
+    TRIVY_DB_REPOSITORY: "public.ecr.aws/aquasecurity/trivy-db:2,mirror.gcr.io/aquasec/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2"
+    TRIVY_JAVA_DB_REPOSITORY: "public.ecr.aws/aquasecurity/trivy-java-db:1,mirror.gcr.io/aquasec/trivy-java-db:1,ghcr.io/aquasecurity/trivy-java-db:1"
+  cache:
+    key: "trivy-cache"
+    paths:
+      - .trivycache/
+
+# Prefetch the vulnerability DB once (with retries) before scanning, so a
+# transient registry hiccup doesn't fail the job and the scan steps reuse the
+# freshly cached DB instead of re-downloading it.
+.trivy-db-prefetch:
+  before_script:
+    - |
+      _n=1
+      until trivy image --download-db-only; do
+        if [ "$_n" -ge 5 ]; then echo "trivy: vulnerability DB download failed after $_n attempts"; exit 1; fi
+        echo "trivy: DB download attempt $_n failed; retrying in 15s..."; _n=$((_n + 1)); sleep 15
+      done
+
 .trivy-fs:
+  extends:
+    - .trivy-db-repos
+    - .trivy-db-prefetch
   stage: Security
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
@@ -31,6 +60,7 @@
   allow_failure: true
 
 .trivy-dockerfile:
+  extends: .trivy-db-repos
   stage: Security
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
@@ -53,6 +83,9 @@
   allow_failure: true
 
 .trivy-image:
+  extends:
+    - .trivy-db-repos
+    - .trivy-db-prefetch
   stage: Security
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
