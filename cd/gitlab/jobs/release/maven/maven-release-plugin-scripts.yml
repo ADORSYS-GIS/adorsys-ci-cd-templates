@@ -325,16 +325,16 @@
       if [ -n "${MASTER_REMOTE_COMMIT}" ]; then
         git checkout -B "${MASTER_BRANCH}" "origin/${MASTER_BRANCH}"
         git pull --no-rebase --no-edit origin "${MASTER_BRANCH}"
-        # master mirrors the released code, so conflicts resolve to the release side (theirs).
-        git merge --no-edit --no-ff -X theirs "${RELEASE_TAG_COMMIT}"
-        # The three-way merge can keep master's -SNAPSHOT pom line; master must carry the released version.
-        MASTER_POM_VERSION=$(mvn -ntp --batch-mode --settings "${MAVEN_SETTINGS_PATH}" \
-          help:evaluate -Dexpression=project.version -DforceStdout -q)
-        if [ "${MASTER_POM_VERSION}" != "${RELEASE_VERSION}" ]; then
-          mvn -ntp --batch-mode --settings "${MAVEN_SETTINGS_PATH}" \
-            versions:set -DnewVersion="${RELEASE_VERSION}" -DgenerateBackupPoms=false -DprocessAllModules=true
-          git add -u
-          git commit -m "chore(release): set ${MASTER_BRANCH} to release version ${RELEASE_VERSION}"
+        # master must mirror the released code EXACTLY. A -X theirs merge only overrides
+        # CONFLICTING hunks, so a file changed only on master (e.g. a stale import) would
+        # survive; instead record the release commit as a parent but take its tree verbatim.
+        git merge -s ours --no-ff --no-commit "${RELEASE_TAG_COMMIT}" || true
+        git read-tree -u --reset "${RELEASE_TAG_COMMIT}"
+        if git diff --cached --quiet HEAD; then
+          git merge --abort 2>/dev/null || true
+          echo "INFO: ${MASTER_BRANCH} already matches release ${RELEASE_VERSION}; nothing to update."
+        else
+          git commit --no-edit -m "chore(release): update ${MASTER_BRANCH} to release version ${RELEASE_VERSION}"
         fi
         MASTER_HEAD_COMMIT=$(git rev-parse HEAD)
         git push origin "HEAD:refs/heads/${MASTER_BRANCH}"
