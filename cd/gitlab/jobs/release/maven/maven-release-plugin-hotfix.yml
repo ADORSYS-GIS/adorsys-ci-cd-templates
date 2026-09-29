@@ -1,0 +1,236 @@
+# Maven hotfix script templates
+# Included automatically by maven-release.yml — include that file instead.
+#
+# A hotfix is a patch release (three-segment version x.x.x, e.g. 22.2.1 / 5.0.3)
+# whose snapshot variable is NOT set. It works from both develop and support:
+#   - develop hotfix: RELEASE_VERSION = x.x.x and SNAPSHOT_VERSION unset
+#   - support hotfix: SUP_RELEASE_VERSION = x.x.x and SUP_SNAPSHOT_VERSION unset
+#
+# Unlike a normal release, a hotfix does NOT change the version on the develop or
+# support branch. It creates a dedicated `hotfix-x.x.x` branch, bumps the pom
+# version there, publishes the artifacts/tag, and updates the matching master
+# branch (develop -> master, support -> master-<major>.x).
+#
+# .maven-release-plugin-hotfix-preflight    — detect mode, validate inputs, create
+#     the hotfix branch from develop/support, record rollback anchors.
+# .maven-release-plugin-run-hotfix          — bump the pom on the hotfix branch and
+#     deploy the release artifacts.
+# .maven-release-plugin-hotfix-post-release — tag, push the hotfix branch, and
+#     update/create the master branch.
+
+.maven-release-plugin-hotfix-preflight:
+  script:
+    - |
+      log_check_pass() {
+        echo "CHECK PASS: $1"
+      }
+
+      log_check_info() {
+        echo "CHECK INFO: $1"
+      }
+
+      is_three_segment() {
+        echo "$1" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
+      }
+
+      SOURCE_BRANCH="${CI_COMMIT_BRANCH:-${CI_COMMIT_REF_NAME:-}}"
+      if [ -z "${SOURCE_BRANCH}" ]; then
+        echo "ERROR: Could not determine source branch from CI_COMMIT_BRANCH/CI_COMMIT_REF_NAME."
+        exit 1
+      fi
+
+      # A hotfix is: release version = x.x.x AND its snapshot variable is unset.
+      HOTFIX_MODE=""
+      if is_three_segment "${RELEASE_VERSION:-}" && [ -z "${SNAPSHOT_VERSION:-}" ]; then
+        HOTFIX_MODE="develop"
+        HOTFIX_VERSION="${RELEASE_VERSION}"
+      elif is_three_segment "${SUP_RELEASE_VERSION:-}" && [ -z "${SUP_SNAPSHOT_VERSION:-}" ]; then
+        HOTFIX_MODE="support"
+        HOTFIX_VERSION="${SUP_RELEASE_VERSION}"
+      else
+        echo "ERROR: Not a hotfix run. Set RELEASE_VERSION=x.x.x (no SNAPSHOT_VERSION) for a develop hotfix,"
+        echo "       or SUP_RELEASE_VERSION=x.x.x (no SUP_SNAPSHOT_VERSION) for a support hotfix."
+        exit 1
+      fi
+
+      HOTFIX_MAJOR="${HOTFIX_VERSION%%.*}"
+
+      if [ "${HOTFIX_MODE}" = "develop" ]; then
+        if [ -z "${RELEASE_DEVELOP_BRANCH_REGEX_BASH:-}" ] || [ -z "${RELEASE_MAIN_BRANCH:-}" ]; then
+          echo "ERROR: Develop hotfix requires RELEASE_DEVELOP_BRANCH_REGEX_BASH and RELEASE_MAIN_BRANCH."
+          exit 1
+        fi
+        if ! echo "${SOURCE_BRANCH}" | grep -Eq "${RELEASE_DEVELOP_BRANCH_REGEX_BASH}"; then
+          echo "ERROR: Develop hotfixes must run from a branch matching ${RELEASE_DEVELOP_BRANCH_REGEX_BASH}. Got ${SOURCE_BRANCH}."
+          exit 1
+        fi
+        # v-prefix (group 1) carries through to the matching master (v2develop -> v2master).
+        VPREFIX=$(echo "${SOURCE_BRANCH}" | sed -nE "s/${RELEASE_DEVELOP_BRANCH_REGEX_BASH}/\\1/p")
+        MASTER_BRANCH="${VPREFIX}${RELEASE_MAIN_BRANCH}"
+      else
+        if [ -z "${RELEASE_SUPPORT_BRANCH_REGEX_BASH:-}" ] || [ -z "${RELEASE_SUPPORT_BRANCH_CAPTURE_REGEX:-}" ] || [ -z "${RELEASE_SUPPORT_MASTER_BRANCH_FORMAT:-}" ]; then
+          echo "ERROR: Support hotfix requires RELEASE_SUPPORT_BRANCH_REGEX_BASH, RELEASE_SUPPORT_BRANCH_CAPTURE_REGEX, and RELEASE_SUPPORT_MASTER_BRANCH_FORMAT."
+          exit 1
+        fi
+        if ! echo "${SOURCE_BRANCH}" | grep -Eq "${RELEASE_SUPPORT_BRANCH_REGEX_BASH}"; then
+          echo "ERROR: Support hotfixes must run from a support branch matching ${RELEASE_SUPPORT_BRANCH_REGEX_BASH}. Got ${SOURCE_BRANCH}."
+          exit 1
+        fi
+        # v-prefix (group 1) + major (group 2) drive the derived master-<major>.x branch.
+        VPREFIX=$(echo "${SOURCE_BRANCH}" | sed -nE "s/${RELEASE_SUPPORT_BRANCH_CAPTURE_REGEX}/\\1/p")
+        SUPPORT_MAJOR=$(echo "${SOURCE_BRANCH}" | sed -nE "s/${RELEASE_SUPPORT_BRANCH_CAPTURE_REGEX}/\\2/p")
+        if ! echo "${SUPPORT_MAJOR}" | grep -Eq '^[0-9]+$' || [ "${SUPPORT_MAJOR}" != "${HOTFIX_MAJOR}" ]; then
+          echo "ERROR: Support hotfix ${HOTFIX_VERSION} must run from the support-${HOTFIX_MAJOR}.x line, but the source branch major is ${SUPPORT_MAJOR:-<none>}."
+          exit 1
+        fi
+        if [ $((HOTFIX_MAJOR % 2)) -ne 0 ]; then
+          echo "ERROR: Support hotfix major must be even. Got ${HOTFIX_MAJOR}."
+          exit 1
+        fi
+        MASTER_BRANCH="${VPREFIX}$(printf "${RELEASE_SUPPORT_MASTER_BRANCH_FORMAT}" "${HOTFIX_MAJOR}")"
+      fi
+
+      HOTFIX_BRANCH="${VPREFIX}hotfix-${HOTFIX_VERSION}"
+
+      git remote set-url origin "https://oauth2:${GITLAB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+      # rewrite any SSH remote (pom.xml scm or submodule) so Maven never dials SSH
+      git config --global url."https://oauth2:${GITLAB_TOKEN}@${CI_SERVER_HOST}/".insteadOf "git@${CI_SERVER_HOST}:"
+
+      if ! git ls-remote --exit-code --heads origin "${SOURCE_BRANCH}" >/dev/null 2>&1; then
+        echo "ERROR: Source branch ${SOURCE_BRANCH} does not exist on origin."
+        exit 1
+      fi
+      if git ls-remote --exit-code --tags origin "refs/tags/${HOTFIX_VERSION}" >/dev/null 2>&1; then
+        echo "ERROR: Hotfix ${HOTFIX_VERSION} is already complete (tag already exists)."
+        exit 1
+      fi
+      if git ls-remote --exit-code --heads origin "${HOTFIX_BRANCH}" >/dev/null 2>&1; then
+        echo "ERROR: Hotfix branch ${HOTFIX_BRANCH} already exists on origin."
+        exit 1
+      fi
+
+      git fetch origin "${SOURCE_BRANCH}" --tags
+      # Create the hotfix branch FROM the source branch; the source branch is never modified.
+      git checkout -B "${HOTFIX_BRANCH}" "origin/${SOURCE_BRANCH}"
+      log_check_pass "Created hotfix branch ${HOTFIX_BRANCH} from ${SOURCE_BRANCH}"
+
+      # Record whether the master branch pre-existed and where it pointed, so rollback can
+      # restore it (or delete a master-<major>.x that the hotfix created).
+      MASTER_PRE_HOTFIX_TAG="pre-hotfix-${HOTFIX_VERSION}"
+      if git ls-remote --exit-code --heads origin "${MASTER_BRANCH}" >/dev/null 2>&1; then
+        _MASTER_PRE_COMMIT=$(git ls-remote --heads origin "${MASTER_BRANCH}" | awk '{print $1}')
+        git tag -f "${MASTER_PRE_HOTFIX_TAG}" "${_MASTER_PRE_COMMIT}"
+        git push origin "refs/tags/${MASTER_PRE_HOTFIX_TAG}"
+        log_check_pass "Recorded pre-hotfix ${MASTER_BRANCH} state: ${MASTER_PRE_HOTFIX_TAG} → ${_MASTER_PRE_COMMIT}"
+      else
+        log_check_info "${MASTER_BRANCH} does not exist yet; this hotfix will create it (rollback will delete it)."
+      fi
+
+      export HOTFIX_MODE HOTFIX_VERSION HOTFIX_MAJOR HOTFIX_BRANCH MASTER_BRANCH SOURCE_BRANCH
+
+      log_check_info "Hotfix plan:"
+      log_check_info "  mode=${HOTFIX_MODE}"
+      log_check_info "  version=${HOTFIX_VERSION}"
+      log_check_info "  source branch=${SOURCE_BRANCH} (left unchanged)"
+      log_check_info "  hotfix branch=${HOTFIX_BRANCH}"
+      log_check_info "  master branch=${MASTER_BRANCH}"
+      echo "INFO: Hotfix preflight passed for ${HOTFIX_VERSION}."
+
+.maven-release-plugin-run-hotfix:
+  script:
+    - |
+      : "${GITLAB_USER_EMAIL:?Set GITLAB_USER_EMAIL as a project/group CI/CD variable}"
+      git config user.email "${GITLAB_USER_EMAIL}"
+      git config user.name "${GITLAB_USER_NAME:-ci-release-bot}"
+
+      # Bump the pom version on the hotfix branch only (develop/support poms stay untouched).
+      mvn -ntp --batch-mode --settings "${MAVEN_SETTINGS_PATH}" \
+        versions:set -DnewVersion="${HOTFIX_VERSION}" -DgenerateBackupPoms=false -DprocessAllModules=true
+      if git diff --quiet; then
+        echo "INFO: ${HOTFIX_BRANCH} is already at ${HOTFIX_VERSION}; no version bump needed."
+      else
+        git add -u
+        git commit -m "chore(release): set hotfix version ${HOTFIX_VERSION}"
+      fi
+
+      # Publish the hotfix release artifacts to the package registry.
+      mvn -ntp --settings "${MAVEN_SETTINGS_PATH}" -P"${MAVEN_DEPLOY_PROFILE}" -DskipTests -U deploy
+
+.maven-release-plugin-hotfix-post-release:
+  script:
+    - |
+      git config user.email "${GITLAB_USER_EMAIL}"
+      git config user.name "${GITLAB_USER_NAME:-ci-release-bot}"
+      git remote set-url origin "https://oauth2:${GITLAB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+
+      log_check_pass() {
+        echo "CHECK PASS: $1"
+      }
+
+      verify_remote_tag() {
+        if git ls-remote --exit-code --tags origin "refs/tags/$1" >/dev/null 2>&1; then
+          log_check_pass "Git tag exists on origin: $1"
+        else
+          echo "ERROR: Expected git tag $1 was not found on origin."
+          exit 1
+        fi
+      }
+
+      verify_remote_branch() {
+        if git ls-remote --exit-code --heads origin "$1" >/dev/null 2>&1; then
+          log_check_pass "Branch exists on origin: $1"
+        else
+          echo "ERROR: Expected branch $1 was not found on origin."
+          exit 1
+        fi
+      }
+
+      verify_remote_branch_commit() {
+        REMOTE_COMMIT=$(git ls-remote --heads origin "$1" | awk '{print $1}')
+        if [ -z "$REMOTE_COMMIT" ] || [ "$REMOTE_COMMIT" != "$2" ]; then
+          echo "ERROR: Remote branch $1 points to ${REMOTE_COMMIT:-missing} but expected $2."
+          exit 1
+        fi
+        log_check_pass "Branch $1 points to expected commit $2"
+      }
+
+      HOTFIX_COMMIT=$(git rev-parse "${HOTFIX_BRANCH}")
+
+      # Tag the hotfix commit and publish the hotfix branch.
+      git tag -f "${HOTFIX_VERSION}" "${HOTFIX_COMMIT}"
+      git push origin "${HOTFIX_COMMIT}:refs/heads/${HOTFIX_BRANCH}"
+      verify_remote_branch "${HOTFIX_BRANCH}"
+      verify_remote_branch_commit "${HOTFIX_BRANCH}" "${HOTFIX_COMMIT}"
+      # ci.skip: tag pipeline is redundant — Docker images are already pushed inside this job
+      git push -o ci.skip origin "refs/tags/${HOTFIX_VERSION}"
+      verify_remote_tag "${HOTFIX_VERSION}"
+
+      # master (develop) or master-<major>.x (support) mirrors the latest release → point it at the hotfix.
+      MASTER_REMOTE_COMMIT=$(git ls-remote --heads origin "${MASTER_BRANCH}" | awk '{print $1}')
+      if [ -n "${MASTER_REMOTE_COMMIT}" ]; then
+        git checkout -B "${MASTER_BRANCH}" "origin/${MASTER_BRANCH}"
+        # master mirrors the released code, so conflicts resolve to the hotfix side (theirs).
+        git merge --no-edit --no-ff -X theirs "${HOTFIX_COMMIT}"
+        MASTER_POM_VERSION=$(mvn -ntp --batch-mode --settings "${MAVEN_SETTINGS_PATH}" \
+          help:evaluate -Dexpression=project.version -DforceStdout -q)
+        if [ "${MASTER_POM_VERSION}" != "${HOTFIX_VERSION}" ]; then
+          mvn -ntp --batch-mode --settings "${MAVEN_SETTINGS_PATH}" \
+            versions:set -DnewVersion="${HOTFIX_VERSION}" -DgenerateBackupPoms=false -DprocessAllModules=true
+          git add -u
+          git commit -m "chore(release): set ${MASTER_BRANCH} to hotfix version ${HOTFIX_VERSION}"
+        fi
+        MASTER_HEAD_COMMIT=$(git rev-parse HEAD)
+        git push origin "HEAD:refs/heads/${MASTER_BRANCH}"
+      else
+        MASTER_HEAD_COMMIT="${HOTFIX_COMMIT}"
+        git push origin "${HOTFIX_COMMIT}:refs/heads/${MASTER_BRANCH}"
+      fi
+      verify_remote_branch "${MASTER_BRANCH}"
+      verify_remote_branch_commit "${MASTER_BRANCH}" "${MASTER_HEAD_COMMIT}"
+
+      echo "INFO: Hotfix completed and verified."
+      echo "INFO:   version=${HOTFIX_VERSION}"
+      echo "INFO:   hotfix branch=${HOTFIX_BRANCH}"
+      echo "INFO:   master branch=${MASTER_BRANCH}"
+      echo "INFO:   source branch ${SOURCE_BRANCH} left unchanged (poms not bumped)."
+      log_check_pass "Hotfix flow complete for ${HOTFIX_VERSION}"

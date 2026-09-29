@@ -38,6 +38,7 @@ required by that job.
 | `MAVEN_SETTINGS_PATH`, `MAVEN_DEPLOY_PROFILE`, `MAVEN_PRELEASE_PROFILE`, `MAVEN_RELEASE_PROFILE` | Maven release jobs | Project |
 | `RELEASE_DEVELOP_MODE`, `RELEASE_DEVELOP_BRANCH` | Maven release plugin jobs | Project |
 | `RELEASE_SUPPORT_MODE`, `RELEASE_SUPPORT_BRANCH_FORMAT` | Support-branch Maven release plugin jobs | Project |
+| `RELEASE_VERSION`/`SNAPSHOT_VERSION` (develop) and `SUP_RELEASE_VERSION`/`SUP_SNAPSHOT_VERSION` (support) | Release + hotfix jobs. A three-segment release version with its snapshot variable **unset** is a hotfix; `RELEASE_SUPPORT_MASTER_BRANCH_FORMAT` + `RELEASE_SUPPORT_BRANCH_CAPTURE_REGEX` + `RELEASE_MAIN_BRANCH` drive the hotfix master/branch derivation | Pipeline/Project |
 | `DOCKERHUB_NAMESPACE`, `DOCKER_IMAGE_NAME` | Single-image Docker package job | Project |
 | `DOCKERHUB_NAMESPACE`, `DOCKER_IMAGE_NAMES` | Multi-image Docker package jobs | Project |
 | `ANGULAR_LINT_TARGET`, `JAVA_LINT_TARGET`, `PMD_MAKE_TARGET`, `DOCKERFILE_MAKE_TARGET` | Corresponding Makefile lint jobs; optional overrides | Project |
