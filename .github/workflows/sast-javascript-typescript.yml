@@ -1,0 +1,22 @@
+name: SAST JavaScript and TypeScript
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        required: true
+        type: string
+      working-directory:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  scan:
+    uses: ADORSYS-GIS/adorsys-ci-cd-templates/.github/workflows/sast-semgrep.yml@main
+    with:
+      runner: ${{ inputs.runner }}
+      working-directory: ${{ inputs.working-directory }}

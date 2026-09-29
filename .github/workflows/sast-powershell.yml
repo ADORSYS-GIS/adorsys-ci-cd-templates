@@ -1,0 +1,33 @@
+name: SAST PowerShell
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        required: true
+        type: string
+      working-directory:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  scan:
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: PSScriptAnalyzer
+        continue-on-error: ${{ github.base_ref != 'develop' && github.base_ref != 'main' && github.base_ref != 'master' && github.ref_name != 'develop' && github.ref_name != 'main' && github.ref_name != 'master' }}
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" \
+            -v "$GITHUB_WORKSPACE/scripts/sast:/sast" \
+            mcr.microsoft.com/powershell:7.6.6 \
+            pwsh -File /sast/psscriptanalyzer.ps1 -ScanPath "$PWD" -OutFile "psscriptanalyzer.sarif" || true
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@eaec7bdd3f18a9ef62b9f0d85d410932cf58c886 # v3.38.2
+        with:
+          sarif_file: ${{ inputs.working-directory }}/psscriptanalyzer.sarif

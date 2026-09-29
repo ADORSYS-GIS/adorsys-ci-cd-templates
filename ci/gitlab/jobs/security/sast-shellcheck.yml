@@ -1,0 +1,21 @@
+.sast-shellcheck:
+  image: python:3.12-alpine
+  stage: Security
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - when: on_success
+  before_script:
+    - apk add --no-cache shellcheck
+  script:
+    - |
+      FILES=$(find . -type f \( -name '*.sh' -o -name '*.bash' -o -name '*.zsh' \) 2>/dev/null || true)
+      if [ -n "$FILES" ]; then
+        shellcheck -f json $FILES > shellcheck.json || true
+      fi
+      python3 scripts/sast/shellcheck-sarif.py
+  artifacts:
+    when: always
+    paths:
+      - shellcheck.sarif
+    expire_in: "30 days"

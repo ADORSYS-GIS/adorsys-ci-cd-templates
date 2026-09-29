@@ -1,0 +1,14 @@
+.sast-gosec:
+  image: ghcr.io/securego/gosec:2.29.0
+  stage: Security
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - when: on_success
+  script:
+    - gosec -no-fail -fmt sarif -out gosec.sarif ./...
+  artifacts:
+    when: always
+    paths:
+      - gosec.sarif
+    expire_in: "30 days"
