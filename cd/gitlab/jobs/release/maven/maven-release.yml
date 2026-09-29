@@ -2,6 +2,7 @@
 
 include:
   - local: 'cd/gitlab/jobs/release/maven/maven-release-plugin-scripts.yml'
+  - local: 'cd/gitlab/jobs/release/maven/maven-release-plugin-hotfix.yml'
   - local: 'cd/gitlab/jobs/release/maven/maven-release-rollback.yml'
 
 .maven-release-base:
@@ -156,10 +157,33 @@ include:
 .maven-release-plugin-support-base:
   extends: .maven-release-plugin-common
   rules:
-    - if: '$MAVEN_RELEASE_RUN == "true" && $MAVEN_RELEASE_ROLLBACK != "true" && $CI_PIPELINE_SOURCE != "schedule" && $CI_COMMIT_BRANCH =~ $RELEASE_SUPPORT_BRANCH_REGEX && $SUP_RELEASE_VERSION != "" && $SUP_SNAPSHOT_VERSION != ""'
+    # A two-segment SUP_RELEASE_VERSION (x.x) is a support release; a three-segment value
+    # (x.x.x) is a hotfix and is handled by .maven-release-plugin-hotfix-base instead.
+    - if: '$MAVEN_RELEASE_RUN == "true" && $MAVEN_RELEASE_ROLLBACK != "true" && $CI_PIPELINE_SOURCE != "schedule" && $CI_COMMIT_BRANCH =~ $RELEASE_SUPPORT_BRANCH_REGEX && $SUP_RELEASE_VERSION =~ /^[0-9]+\.[0-9]+$/ && $SUP_SNAPSHOT_VERSION != ""'
       when: on_success
     - when: never
   variables:
+    RELEASE_MODE: "${RELEASE_SUPPORT_MODE}"
+
+# ── Hotfix variant ────────────────────────────────────────────────────────────
+# A hotfix is a patch release identified by a three-segment version whose snapshot
+# variable is NOT set. It reuses MAVEN_RELEASE_RUN and works from both develop and
+# support: it publishes the x.x.x tag/artifacts on a dedicated hotfix-x.x.x branch
+# and updates the matching master branch (develop -> master, support -> master-<major>.x),
+# without changing the version on the develop or support branch.
+#   - develop hotfix: RELEASE_VERSION = x.x.x, SNAPSHOT_VERSION unset
+#   - support hotfix: SUP_RELEASE_VERSION = x.x.x, SUP_SNAPSHOT_VERSION unset
+.maven-release-plugin-hotfix-base:
+  extends: .maven-release-plugin-common
+  rules:
+    - if: '$MAVEN_RELEASE_RUN == "true" && $MAVEN_RELEASE_ROLLBACK != "true" && $CI_PIPELINE_SOURCE != "schedule" && $CI_COMMIT_BRANCH =~ $RELEASE_DEVELOP_BRANCH_REGEX && $RELEASE_VERSION =~ /^[0-9]+\.[0-9]+\.[0-9]+$/ && ($SNAPSHOT_VERSION == null || $SNAPSHOT_VERSION == "")'
+      when: on_success
+    - if: '$MAVEN_RELEASE_RUN == "true" && $MAVEN_RELEASE_ROLLBACK != "true" && $CI_PIPELINE_SOURCE != "schedule" && $CI_COMMIT_BRANCH =~ $RELEASE_SUPPORT_BRANCH_REGEX && $SUP_RELEASE_VERSION =~ /^[0-9]+\.[0-9]+\.[0-9]+$/ && ($SUP_SNAPSHOT_VERSION == null || $SUP_SNAPSHOT_VERSION == "")'
+      when: on_success
+    - when: never
+  variables:
+    # Reuse the support notify/cleanup context; EFFECTIVE_RELEASE_VERSION resolves to
+    # SUP_RELEASE_VERSION for a support hotfix and falls back to RELEASE_VERSION for a develop one.
     RELEASE_MODE: "${RELEASE_SUPPORT_MODE}"
 
 .slack-release-success-notify:

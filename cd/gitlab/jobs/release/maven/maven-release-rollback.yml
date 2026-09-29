@@ -8,6 +8,7 @@
 
 
 include:
+  - local: 'cd/gitlab/jobs/release/maven/maven-release-rollback-hotfix.yml'
   - local: 'cd/gitlab/jobs/release/maven/maven-release-rollback-init.yml'
   - local: 'cd/gitlab/jobs/release/maven/maven-release-rollback-helpers-detection.yml'
   - local: 'cd/gitlab/jobs/release/maven/maven-release-rollback-preflight-force-push.yml'
@@ -32,6 +33,9 @@ include:
     - git config user.email "${GITLAB_USER_EMAIL}"
     - git config user.name "${GITLAB_USER_NAME:-ci-release-bot}"
     - git remote set-url origin "https://oauth2:${GITLAB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+    # A three-segment SUP_RELEASE_VERSION (x.x.x) is a hotfix: this rolls it back and exits.
+    # A two-segment value falls through to the standard develop/support rollback below.
+    - !reference [.maven-release-hotfix-rollback, script]
     - !reference [.maven-release-rollback-init, script]
     - !reference [.maven-release-rollback-helpers-detection, script]
     - !reference [.maven-release-rollback-preflight-force-push, script]

@@ -1,0 +1,177 @@
+# Maven hotfix rollback template
+# Included automatically by maven-release-rollback.yml — include that file instead.
+#
+# .maven-release-hotfix-rollback — self-contained rollback for a hotfix release,
+#   detected by a three-segment release version whose snapshot variable is unset:
+#     - develop hotfix: RELEASE_VERSION = x.x.x and SNAPSHOT_VERSION unset
+#     - support hotfix: SUP_RELEASE_VERSION = x.x.x and SUP_SNAPSHOT_VERSION unset
+#   When the version is not a hotfix, this fragment does nothing and the standard
+#   develop/support rollback runs instead. It is referenced FIRST in
+#   .maven-release-rollback-base.
+#
+# A hotfix publishes the x.x.x tag / Maven package / container tags on a dedicated
+# hotfix-x.x.x branch and updates the matching master branch — it never changes the
+# develop or support branch. Rollback deletes those artifacts and the hotfix branch,
+# and restores (or deletes) the master branch.
+
+.maven-release-hotfix-rollback:
+  script:
+    - |
+      is_three_segment() { echo "$1" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; }
+
+      HOTFIX_MODE=""
+      if is_three_segment "${RELEASE_VERSION:-}" && [ -z "${SNAPSHOT_VERSION:-}" ]; then
+        HOTFIX_MODE="develop"; HOTFIX_VERSION="${RELEASE_VERSION}"
+      elif is_three_segment "${SUP_RELEASE_VERSION:-}" && [ -z "${SUP_SNAPSHOT_VERSION:-}" ]; then
+        HOTFIX_MODE="support"; HOTFIX_VERSION="${SUP_RELEASE_VERSION}"
+      fi
+
+      if [ -z "${HOTFIX_MODE}" ]; then
+        echo "INFO: Not a hotfix rollback (no x.x.x release version with an unset snapshot); continuing with standard rollback."
+      else
+        h_info() { echo "ROLLBACK INFO: $1"; }
+        h_done() { echo "ROLLBACK DONE: $1"; }
+        h_skip() { echo "ROLLBACK SKIP: $1"; }
+
+        if [ -z "${GITLAB_TOKEN:-}" ]; then
+          echo "ERROR: GITLAB_TOKEN is not set; cannot delete tags/branches via API."
+          exit 1
+        fi
+
+        HOTFIX_MAJOR="${HOTFIX_VERSION%%.*}"
+        SOURCE_BRANCH="${CI_COMMIT_BRANCH:-${CI_COMMIT_REF_NAME:-}}"
+
+        if [ "${HOTFIX_MODE}" = "develop" ]; then
+          if [ -z "${RELEASE_DEVELOP_BRANCH_REGEX_BASH:-}" ] || [ -z "${RELEASE_MAIN_BRANCH:-}" ]; then
+            echo "ERROR: Develop hotfix rollback requires RELEASE_DEVELOP_BRANCH_REGEX_BASH and RELEASE_MAIN_BRANCH."
+            exit 1
+          fi
+          VPREFIX=$(echo "${SOURCE_BRANCH}" | sed -nE "s/${RELEASE_DEVELOP_BRANCH_REGEX_BASH}/\\1/p")
+          MASTER_BRANCH="${VPREFIX}${RELEASE_MAIN_BRANCH}"
+        else
+          if [ -z "${RELEASE_SUPPORT_BRANCH_CAPTURE_REGEX:-}" ] || [ -z "${RELEASE_SUPPORT_MASTER_BRANCH_FORMAT:-}" ]; then
+            echo "ERROR: Support hotfix rollback requires RELEASE_SUPPORT_BRANCH_CAPTURE_REGEX and RELEASE_SUPPORT_MASTER_BRANCH_FORMAT."
+            exit 1
+          fi
+          VPREFIX=$(echo "${SOURCE_BRANCH}" | sed -nE "s/${RELEASE_SUPPORT_BRANCH_CAPTURE_REGEX}/\\1/p")
+          MASTER_BRANCH="${VPREFIX}$(printf "${RELEASE_SUPPORT_MASTER_BRANCH_FORMAT}" "${HOTFIX_MAJOR}")"
+        fi
+
+        HOTFIX_BRANCH="${VPREFIX}hotfix-${HOTFIX_VERSION}"
+        MASTER_PRE_HOTFIX_TAG="pre-hotfix-${HOTFIX_VERSION}"
+
+        h_info "Hotfix rollback: mode=${HOTFIX_MODE}, version=${HOTFIX_VERSION}, hotfix branch=${HOTFIX_BRANCH}, master=${MASTER_BRANCH}"
+
+        delete_remote_tag_if_exists() {
+          if git ls-remote --exit-code --tags origin "refs/tags/$1" >/dev/null 2>&1; then
+            git push origin ":refs/tags/$1"
+            h_done "Deleted remote tag $1"
+          else
+            h_skip "Remote tag $1 not found"
+          fi
+        }
+
+        delete_remote_branch_via_api() {
+          ENCODED_BRANCH=$(printf '%s' "$1" | sed 's|/|%2F|g')
+          HTTP_STATUS=$(curl --silent --output /dev/null --write-out "%{http_code}" \
+            --request DELETE --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/repository/branches/${ENCODED_BRANCH}")
+          if [ "$HTTP_STATUS" = "204" ] || [ "$HTTP_STATUS" = "200" ]; then
+            h_done "Deleted branch $1"
+          elif [ "$HTTP_STATUS" = "404" ]; then
+            h_skip "Branch $1 not found"
+          else
+            echo "ERROR: Failed to delete branch $1 via API (HTTP ${HTTP_STATUS})."
+            exit 1
+          fi
+        }
+
+        # ── Delete the hotfix git tag ────────────────────────────────────────────
+        delete_remote_tag_if_exists "${HOTFIX_VERSION}"
+
+        # ── Delete container image tags for the hotfix version ────────────────────
+        REPO_IDS=$(curl --silent --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/registry/repositories?per_page=100" \
+          | jq -r '.[].id')
+        for REPO_ID in ${REPO_IDS}; do
+          STATUS=$(curl --silent --output /dev/null --write-out "%{http_code}" \
+            --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/registry/repositories/${REPO_ID}/tags/${HOTFIX_VERSION}")
+          if [ "$STATUS" = "200" ]; then
+            curl --silent --request DELETE --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+              "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/registry/repositories/${REPO_ID}/tags/${HOTFIX_VERSION}" || true
+            h_done "Deleted container tag ${HOTFIX_VERSION} from repository ${REPO_ID}"
+          else
+            h_skip "Container tag ${HOTFIX_VERSION} not found in repository ${REPO_ID}"
+          fi
+        done
+
+        # ── Delete Maven release packages for the hotfix version ──────────────────
+        HOTFIX_PACKAGE_PAGE=0
+        while :; do
+          PACKAGE_IDS=$(curl --silent --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages?package_version=${HOTFIX_VERSION}&per_page=100" \
+            | jq -r '.[].id')
+          [ -z "$PACKAGE_IDS" ] && break
+          for PKG_ID in ${PACKAGE_IDS}; do
+            curl --silent --request DELETE --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+              "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/${PKG_ID}" || true
+            h_done "Deleted Maven package ${PKG_ID} (version ${HOTFIX_VERSION})"
+          done
+          HOTFIX_PACKAGE_PAGE=$((HOTFIX_PACKAGE_PAGE + 1))
+          if [ "$HOTFIX_PACKAGE_PAGE" -ge 100 ]; then
+            echo "ERROR: Exceeded pagination safety limit while deleting packages for ${HOTFIX_VERSION}."
+            exit 1
+          fi
+          sleep 1
+        done
+
+        # ── Delete the generated hotfix branch ───────────────────────────────────
+        delete_remote_branch_via_api "${HOTFIX_BRANCH}"
+
+        # ── Restore or delete the master branch ──────────────────────────────────
+        if ! git ls-remote --exit-code --heads origin "${MASTER_BRANCH}" >/dev/null 2>&1; then
+          h_skip "${MASTER_BRANCH} not found; nothing to restore"
+        elif git ls-remote --exit-code --tags origin "refs/tags/${MASTER_PRE_HOTFIX_TAG}" >/dev/null 2>&1; then
+          # master pre-existed: restore its content to the recorded pre-hotfix commit.
+          git fetch origin "${MASTER_BRANCH}" "refs/tags/${MASTER_PRE_HOTFIX_TAG}"
+          git checkout -B "${MASTER_BRANCH}" "origin/${MASTER_BRANCH}"
+          ANCHOR_COMMIT=$(git rev-list -n 1 "${MASTER_PRE_HOTFIX_TAG}")
+          if ! git read-tree --reset -u "${ANCHOR_COMMIT}"; then
+            echo "ERROR: Could not restore ${MASTER_BRANCH} tree from ${MASTER_PRE_HOTFIX_TAG} (${ANCHOR_COMMIT})."
+            exit 1
+          fi
+          if git diff --cached --quiet HEAD; then
+            h_skip "${MASTER_BRANCH} already matches pre-hotfix ${HOTFIX_VERSION} state"
+          else
+            git config user.email "${GITLAB_USER_EMAIL:-ci-release-bot@adorsys.de}"
+            git config user.name "${GITLAB_USER_NAME:-ci-release-bot}"
+            git commit -m "chore(release): roll back ${MASTER_BRANCH} to pre-hotfix ${HOTFIX_VERSION} state" || {
+              echo "ERROR: Could not create rollback commit on ${MASTER_BRANCH}."
+              exit 1
+            }
+            HEAD_COMMIT=$(git rev-parse HEAD)
+            # ci.skip: rollback commit only restores the pre-hotfix tree
+            if ! git push -o ci.skip origin "HEAD:refs/heads/${MASTER_BRANCH}"; then
+              echo "ERROR: Failed to push rollback commit to ${MASTER_BRANCH}."
+              exit 1
+            fi
+            REMOTE_COMMIT=$(git ls-remote --heads origin "${MASTER_BRANCH}" | awk '{print $1}')
+            if [ "$REMOTE_COMMIT" != "$HEAD_COMMIT" ]; then
+              echo "ERROR: ${MASTER_BRANCH} points to ${REMOTE_COMMIT:-missing} but expected ${HEAD_COMMIT} after rollback."
+              exit 1
+            fi
+            h_done "Restored ${MASTER_BRANCH} to pre-hotfix ${HOTFIX_VERSION} state"
+          fi
+        else
+          # No pre-hotfix anchor: this hotfix created master-<major>.x, so remove it.
+          h_info "No pre-hotfix anchor for ${MASTER_BRANCH}; deleting the branch this hotfix created."
+          delete_remote_branch_via_api "${MASTER_BRANCH}"
+        fi
+
+        # ── Remove the pre-hotfix anchor tag now that rollback has consumed it ─────
+        delete_remote_tag_if_exists "${MASTER_PRE_HOTFIX_TAG}"
+
+        echo "INFO: Hotfix rollback completed for ${HOTFIX_VERSION}."
+        exit 0
+      fi
