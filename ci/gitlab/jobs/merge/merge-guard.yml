@@ -1,0 +1,86 @@
+# Merge guard — reverts a failing merge on a protected branch.
+#
+# Workflow (revert-on-failure):
+#   1. A merge request is merged into a protected branch (develop / master /
+#      support-*.x), producing a merge commit at the branch tip.
+#   2. The resulting protected-branch push pipeline runs as usual.
+#   3. If any earlier-stage job fails, this .post-stage job runs
+#      (when: on_failure) and pushes a revert of the merge commit, so the
+#      protected branch never keeps a broken merge.
+#
+# This job runs only on merge commits pushed to protected branches; it does not
+# affect merge-request pipelines.
+#
+# Guards / safety:
+#   - Only runs on protected-branch push pipelines (never on MRs, tags,
+#     schedules, or release/rollback runs).
+#   - Only reverts real merge commits (2+ parents). Regular commits and previous
+#     revert commits (single parent) are left untouched, which also prevents an
+#     endless revert-of-revert loop.
+#   - Aborts (and fails loudly) if the revert cannot be applied cleanly, leaving
+#     the branch for manual intervention rather than force-pushing.
+#
+# Requirements:
+#   - GITLAB_TOKEN: PAT / Project Access Token with `write_repository` scope and
+#     permission to push to the protected branch (add its user to the branch's
+#     "Allowed to push and merge" list, or use a maintainer/owner token).
+#   - JAVA_MAVEN_IMAGE: reused only because it already ships git; override
+#     `image` if a lighter git image is preferred.
+
+.merge-revert-on-failure:
+  image: "${JAVA_MAVEN_IMAGE}"
+  stage: .post
+  variables:
+    GIT_STRATEGY: clone
+    GIT_DEPTH: "0"
+    MERGE_GUARD_USER_NAME: "CI Merge Guard"
+    MERGE_GUARD_USER_EMAIL: "ci@adorsys.de"
+  rules:
+    - if: '$MAVEN_RELEASE_RUN == "true"'
+      when: never
+    - if: '$MAVEN_RELEASE_ROLLBACK == "true"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_PROTECTED == "true"'
+      when: on_failure
+    - when: never
+  before_script:
+    - 'test -n "${JAVA_MAVEN_IMAGE}" || (echo "JAVA_MAVEN_IMAGE must be set in project .gitlab-ci.yml variables" && exit 1)'
+    - ': "${GITLAB_TOKEN:?GITLAB_TOKEN must be configured as a masked CI variable with write access to protected branches}"'
+    - git --version
+  script:
+    - |
+      set -eu
+
+      branch="${CI_COMMIT_BRANCH:?merge guard only runs on branch pipelines}"
+      merge_sha="${CI_COMMIT_SHA}"
+
+      # A merge commit has 2+ parents; `git rev-list --parents -n 1` prints the
+      # commit sha followed by its parents, so a merge commit yields >= 3 words.
+      parent_words=$(git rev-list --parents -n 1 "${merge_sha}" | wc -w)
+      if [ "${parent_words}" -lt 3 ]; then
+        echo "INFO: HEAD ${merge_sha} on ${branch} is not a merge commit (parents=$((parent_words - 1))); nothing to revert."
+        exit 0
+      fi
+
+      git config user.name  "${MERGE_GUARD_USER_NAME}"
+      git config user.email "${MERGE_GUARD_USER_EMAIL}"
+      git remote set-url origin "https://oauth2:${GITLAB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+
+      # Re-sync to the live branch tip so the revert applies on top of the
+      # current head even if another commit landed after the failing merge.
+      git fetch origin "${branch}"
+      git checkout -B "${branch}" "origin/${branch}"
+
+      # -m 1 keeps the protected branch's mainline (first parent) and undoes the
+      # merged-in side; --no-edit uses the default "Revert ..." message.
+      if ! git revert --mainline 1 --no-edit "${merge_sha}"; then
+        echo "ERROR: Automatic revert of merge commit ${merge_sha} failed (conflicts). Manual intervention required."
+        git revert --abort || true
+        exit 1
+      fi
+
+      # ci.skip: the revert restores a known-good state, so it must not trigger
+      # another full pipeline. (The revert commit is single-parent, so this job
+      # would no-op on it anyway.)
+      git push -o ci.skip origin "HEAD:refs/heads/${branch}"
+      echo "INFO: Reverted failing merge commit ${merge_sha} on protected branch ${branch}."

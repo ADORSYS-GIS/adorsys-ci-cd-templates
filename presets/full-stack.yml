@@ -16,6 +16,7 @@ include:
   - local: 'ci/gitlab/jobs/build/java-maven.yml'
   - local: 'ci/gitlab/jobs/test/java-tests.yml'
   - local: 'ci/gitlab/jobs/security/sonarqube.yml'
+  - local: 'ci/gitlab/jobs/merge/merge-guard.yml'
   - local: 'cd/gitlab/jobs/release/maven/maven-release.yml'
 
 stages:
@@ -55,3 +56,9 @@ Lint (PMD/CPD):
 Security (OWASP Dependency Check):
   extends: .owasp-dependency-check
   rules: !reference [.pipeline-always-except-schedules, rules]
+
+# ==================== RELEASE STAGE ====================
+
+# Reverts the merge commit on a protected branch if a pipeline job fails.
+Merge Guard (revert on failure):
+  extends: .merge-revert-on-failure

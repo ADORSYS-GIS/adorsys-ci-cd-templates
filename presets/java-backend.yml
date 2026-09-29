@@ -15,6 +15,7 @@ include:
   - local: 'ci/gitlab/jobs/build/java-maven.yml'
   - local: 'ci/gitlab/jobs/test/java-tests.yml'
   - local: 'ci/gitlab/jobs/security/sonarqube.yml'
+  - local: 'ci/gitlab/jobs/merge/merge-guard.yml'
   - local: 'cd/gitlab/jobs/release/maven/maven-release.yml'
 
 stages:
@@ -86,6 +87,10 @@ SonarQube:
     - job: "Security (OWASP Dependency Check)"
 
 # Release Jobs
+# Reverts the merge commit on a protected branch if a pipeline job fails.
+Merge Guard (revert on failure):
+  extends: .merge-revert-on-failure
+
 Release (develop):
   extends: .maven-release-snapshot
 

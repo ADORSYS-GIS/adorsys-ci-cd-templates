@@ -3,6 +3,15 @@
 # Standard Experience uses BLOCKER and CRITICAL issue severities. HIGH is an
 # impact level used by Multi-Quality Rule mode, not a Standard Experience API
 # severity.
+#
+# Coverage: every sonar:sonar goal passes
+#   -Dsonar.coverage.jacoco.xmlReportPaths=${SONAR_JACOCO_REPORT_PATHS:-$CI_PROJECT_DIR/**/target/site/jacoco-unit/jacoco.xml}
+# which points at the report produced by the .test-java-unit template (it writes
+# to the non-default target/site/jacoco-unit/, so the scanner default of
+# target/site/jacoco/ would otherwise report 0% coverage). For coverage to reach
+# the server the project's SonarQube job MUST list the unit-test job under
+# `needs:` with `artifacts: true` so the jacoco-unit XML is downloaded into this
+# job's workspace. Override SONAR_JACOCO_REPORT_PATHS to change the location.
 
 .sonarqube-upload:
   image: "${JAVA_MAVEN_IMAGE}"
@@ -27,7 +36,7 @@
     - java -version
     - mvn -version
   script:
-    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -DskipTests -DskipITs
+    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -DskipTests -DskipITs -Dsonar.coverage.jacoco.xmlReportPaths="${SONAR_JACOCO_REPORT_PATHS:-$CI_PROJECT_DIR/**/target/site/jacoco-unit/jacoco.xml}"
   allow_failure: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -58,7 +67,7 @@
     # Reuse the Build job's own reactor SNAPSHOTs from its restored classes (no
     # javac); only cross-project deps are fetched from the registry.
     - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dmaven.main.skip=true -Dmaven.test.skip=true install
-    - mvn -nsu -Dmaven.repo.local=.m2/repository sonar:sonar -Dsonar.qualitygate.wait=true
+    - mvn -nsu -Dmaven.repo.local=.m2/repository sonar:sonar -Dsonar.qualitygate.wait=true -Dsonar.coverage.jacoco.xmlReportPaths="${SONAR_JACOCO_REPORT_PATHS:-$CI_PROJECT_DIR/**/target/site/jacoco-unit/jacoco.xml}"
   allow_failure: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -91,7 +100,7 @@
     # Reuse the Build job's own reactor SNAPSHOTs from its restored classes (no
     # javac); only cross-project deps are fetched from the registry.
     - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -Dmaven.main.skip=true -Dmaven.test.skip=true install
-    - mvn -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository sonar:sonar -Dsonar.qualitygate.wait=true
+    - mvn -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository sonar:sonar -Dsonar.qualitygate.wait=true -Dsonar.coverage.jacoco.xmlReportPaths="${SONAR_JACOCO_REPORT_PATHS:-$CI_PROJECT_DIR/**/target/site/jacoco-unit/jacoco.xml}"
 
 # ── Strict gate variants (allow_failure: false) ──────────────────────────────
 # These variants block the pipeline if the SonarQube quality gate fails.
@@ -224,10 +233,10 @@
       # javac); only cross-project deps come from the registry.
       if [ -n "${MAVEN_SETTINGS_PATH:-}" ]; then
         mvn -ntp -nsu --settings "$MAVEN_SETTINGS_PATH" -Dmaven.repo.local=.m2/repository -Dmaven.main.skip=true -Dmaven.test.skip=true install
-        mvn -ntp -nsu --settings "$MAVEN_SETTINGS_PATH" -Dmaven.repo.local=.m2/repository sonar:sonar -DskipTests -DskipITs -Dsonar.qualitygate.wait=false
+        mvn -ntp -nsu --settings "$MAVEN_SETTINGS_PATH" -Dmaven.repo.local=.m2/repository sonar:sonar -DskipTests -DskipITs -Dsonar.qualitygate.wait=false -Dsonar.coverage.jacoco.xmlReportPaths="${SONAR_JACOCO_REPORT_PATHS:-$CI_PROJECT_DIR/**/target/site/jacoco-unit/jacoco.xml}"
       else
         mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dmaven.main.skip=true -Dmaven.test.skip=true install
-        mvn -ntp -nsu -Dmaven.repo.local=.m2/repository sonar:sonar -DskipTests -DskipITs -Dsonar.qualitygate.wait=false
+        mvn -ntp -nsu -Dmaven.repo.local=.m2/repository sonar:sonar -DskipTests -DskipITs -Dsonar.qualitygate.wait=false -Dsonar.coverage.jacoco.xmlReportPaths="${SONAR_JACOCO_REPORT_PATHS:-$CI_PROJECT_DIR/**/target/site/jacoco-unit/jacoco.xml}"
       fi
 
       # mvn sonar:sonar writes report-task.txt under target/sonar, not .scannerwork
