@@ -220,7 +220,8 @@
       # Anchor tag records the exact pre-release HEAD so rollback never has to infer it.
       _ANCHOR_TAG="pre-release-${RELEASE_VERSION}"
       git tag -f "${_ANCHOR_TAG}"
-      git push origin "refs/tags/${_ANCHOR_TAG}"
+      # ci.skip: internal rollback marker only — must not trigger a tag pipeline (E2E, etc.)
+      git push -o ci.skip origin "refs/tags/${_ANCHOR_TAG}"
       log_check_pass "Pre-release anchor tag pushed: ${_ANCHOR_TAG} → $(git rev-parse HEAD)"
 
       export RELEASE_MODE RELEASE_VERSION SNAPSHOT_VERSION TARGET_BRANCH SNAPSHOT_TARGET_BRANCH RELEASE_KIND MASTER_BRANCH RELEASE_BRANCH
