@@ -120,7 +120,8 @@
       if git ls-remote --exit-code --heads origin "${MASTER_BRANCH}" >/dev/null 2>&1; then
         _MASTER_PRE_COMMIT=$(git ls-remote --heads origin "${MASTER_BRANCH}" | awk '{print $1}')
         git tag -f "${MASTER_PRE_HOTFIX_TAG}" "${_MASTER_PRE_COMMIT}"
-        git push origin "refs/tags/${MASTER_PRE_HOTFIX_TAG}"
+        # ci.skip: internal rollback marker only — must not trigger a tag pipeline (E2E, etc.)
+        git push -o ci.skip origin "refs/tags/${MASTER_PRE_HOTFIX_TAG}"
         log_check_pass "Recorded pre-hotfix ${MASTER_BRANCH} state: ${MASTER_PRE_HOTFIX_TAG} → ${_MASTER_PRE_COMMIT}"
       else
         log_check_info "${MASTER_BRANCH} does not exist yet; this hotfix will create it (rollback will delete it)."
