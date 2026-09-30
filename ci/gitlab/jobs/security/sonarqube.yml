@@ -174,6 +174,16 @@
         analysis_target_branch="${CI_MERGE_REQUEST_TARGET_BRANCH_NAME:-}"
       fi
 
+      # Analyse the full SOURCE branch (branch analysis, never PR/MR mode) so that
+      # MR pipelines scan the entire codebase and surface all pre-existing issues,
+      # not only the files changed in the merge request. PR analysis only reports
+      # "new code" on the diff, so remaining issues stay hidden until the merge
+      # commit runs a full branch analysis.
+      sonar_branch_name="${CI_COMMIT_BRANCH:-}"
+      if [ "${CI_PIPELINE_SOURCE:-}" = "merge_request_event" ]; then
+        sonar_branch_name="${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME:-}"
+      fi
+
       if [ "$analysis_target_branch" != "develop" ]; then
         if [ "${SONAR_ENABLE_SUPPORT_BRANCH_ANALYSIS}" != "true" ]; then
           echo "Skipping SonarQube analysis: support-branch analysis is disabled for this project."
@@ -233,10 +243,10 @@
       # javac); only cross-project deps come from the registry.
       if [ -n "${MAVEN_SETTINGS_PATH:-}" ]; then
         mvn -ntp -nsu --settings "$MAVEN_SETTINGS_PATH" -Dmaven.repo.local=.m2/repository -Dmaven.main.skip=true -Dmaven.test.skip=true install
-        mvn -ntp -nsu --settings "$MAVEN_SETTINGS_PATH" -Dmaven.repo.local=.m2/repository sonar:sonar -DskipTests -DskipITs -Dsonar.qualitygate.wait=false -Dsonar.coverage.jacoco.xmlReportPaths="${SONAR_JACOCO_REPORT_PATHS:-$CI_PROJECT_DIR/**/target/site/jacoco-unit/jacoco.xml}"
+        mvn -ntp -nsu --settings "$MAVEN_SETTINGS_PATH" -Dmaven.repo.local=.m2/repository sonar:sonar -Dsonar.branch.name="$sonar_branch_name" -DskipTests -DskipITs -Dsonar.qualitygate.wait=false -Dsonar.coverage.jacoco.xmlReportPaths="${SONAR_JACOCO_REPORT_PATHS:-$CI_PROJECT_DIR/**/target/site/jacoco-unit/jacoco.xml}"
       else
         mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dmaven.main.skip=true -Dmaven.test.skip=true install
-        mvn -ntp -nsu -Dmaven.repo.local=.m2/repository sonar:sonar -DskipTests -DskipITs -Dsonar.qualitygate.wait=false -Dsonar.coverage.jacoco.xmlReportPaths="${SONAR_JACOCO_REPORT_PATHS:-$CI_PROJECT_DIR/**/target/site/jacoco-unit/jacoco.xml}"
+        mvn -ntp -nsu -Dmaven.repo.local=.m2/repository sonar:sonar -Dsonar.branch.name="$sonar_branch_name" -DskipTests -DskipITs -Dsonar.qualitygate.wait=false -Dsonar.coverage.jacoco.xmlReportPaths="${SONAR_JACOCO_REPORT_PATHS:-$CI_PROJECT_DIR/**/target/site/jacoco-unit/jacoco.xml}"
       fi
 
       # mvn sonar:sonar writes report-task.txt under target/sonar, not .scannerwork
@@ -271,10 +281,10 @@
         exit 1
       fi
 
-      issue_scope="branch=${CI_COMMIT_BRANCH:-}"
-      if [ "${CI_PIPELINE_SOURCE:-}" = "merge_request_event" ]; then
-        issue_scope="pullRequest=${CI_MERGE_REQUEST_IID}"
-      fi
+      # Query the same branch we just analysed in every context (branch analysis
+      # is now used for MRs too), so the gate evaluates the whole codebase on MR
+      # pipelines instead of only the PR-changed files.
+      issue_scope="branch=${sonar_branch_name}"
       bug_severities="${SONAR_BUG_SEVERITIES:-BLOCKER,CRITICAL,MAJOR}"
       vulnerability_severities="${SONAR_VULNERABILITY_SEVERITIES:-BLOCKER,CRITICAL,MAJOR}"
 
