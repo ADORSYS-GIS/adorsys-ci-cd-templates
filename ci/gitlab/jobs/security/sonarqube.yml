@@ -241,11 +241,16 @@
 
       # Reuse the Build job's own reactor SNAPSHOTs from its restored classes (no
       # javac); only cross-project deps come from the registry.
+      # pmd:pmd writes per-module target/pmd.xml which sonar:sonar imports via
+      # sonar.java.pmd.reportPaths; it never fails on violations, so keep it
+      # non-fatal and let the SonarQube gate proceed even if PMD hiccups.
       if [ -n "${MAVEN_SETTINGS_PATH:-}" ]; then
         mvn -ntp -nsu --settings "$MAVEN_SETTINGS_PATH" -Dmaven.repo.local=.m2/repository -Dmaven.main.skip=true -Dmaven.test.skip=true install
+        mvn -ntp -nsu --settings "$MAVEN_SETTINGS_PATH" -Dmaven.repo.local=.m2/repository -Dmaven.test.skip=true pmd:pmd || echo "WARN: PMD report generation failed; continuing without external PMD reports"
         mvn -ntp -nsu --settings "$MAVEN_SETTINGS_PATH" -Dmaven.repo.local=.m2/repository sonar:sonar -Dsonar.branch.name="$sonar_branch_name" -DskipTests -DskipITs -Dsonar.qualitygate.wait=false -Dsonar.coverage.jacoco.xmlReportPaths="${SONAR_JACOCO_REPORT_PATHS:-$CI_PROJECT_DIR/**/target/site/jacoco-unit/jacoco.xml}"
       else
         mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dmaven.main.skip=true -Dmaven.test.skip=true install
+        mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dmaven.test.skip=true pmd:pmd || echo "WARN: PMD report generation failed; continuing without external PMD reports"
         mvn -ntp -nsu -Dmaven.repo.local=.m2/repository sonar:sonar -Dsonar.branch.name="$sonar_branch_name" -DskipTests -DskipITs -Dsonar.qualitygate.wait=false -Dsonar.coverage.jacoco.xmlReportPaths="${SONAR_JACOCO_REPORT_PATHS:-$CI_PROJECT_DIR/**/target/site/jacoco-unit/jacoco.xml}"
       fi
 
