@@ -12,8 +12,9 @@
 # affect merge-request pipelines.
 #
 # Guards / safety:
-#   - Only runs on protected-branch push pipelines (never on MRs, tags,
-#     schedules, or release/rollback runs).
+#   - Only runs on merge commits pushed to protected branches (never on regular
+#     commits, MRs, tags, schedules, or release/rollback runs). The rule matches
+#     the "Merge branch '...' into '...'" title GitLab generates for MR merges.
 #   - Only reverts real merge commits (2+ parents). Regular commits and previous
 #     revert commits (single parent) are left untouched, which also prevents an
 #     endless revert-of-revert loop.
@@ -40,7 +41,12 @@
       when: never
     - if: '$MAVEN_RELEASE_ROLLBACK == "true"'
       when: never
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_PROTECTED == "true"'
+    # Only for merge commits pushed to a protected branch. GitLab MR merges
+    # create a commit titled "Merge branch '...' into '...'"; regular commits
+    # (direct pushes, reverts, squash/fast-forward) don't match, so the job is
+    # never created for them. The parent-count check in `script` is a second
+    # line of defence.
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_PROTECTED == "true" && $CI_COMMIT_MESSAGE =~ /^Merge branch /'
       when: on_failure
     - when: never
   before_script:
