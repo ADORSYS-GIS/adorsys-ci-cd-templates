@@ -77,4 +77,20 @@ jobs:
 ```
 
 Configure `SONAR_HOST_URL` and `SONAR_TOKEN` as repository secrets. The shared
-workflow accepts optional `source-dirs` and `exclusions` inputs.
+workflow accepts optional `source-dirs`, `exclusions`, `test-dirs`,
+`coverage-report-paths`, `bug-severities`, `vulnerability-severities`, and
+`analysis-timeout` inputs.
+
+Like the GitLab job, the workflow follows these principles rather than delegating
+to the server-side quality gate:
+
+- **Full-branch analysis, never PR mode.** On `pull_request` events it analyses
+  the whole source branch (`sonar.branch.name`) so the scan surfaces every
+  pre-existing issue, not only the files changed in the pull request.
+- **No reliance on `sonar.qualitygate.wait`.** The scan runs with `wait=false`,
+  then the analysis task is polled to completion (`analysis-timeout`, default
+  300s, with retries on transient failures).
+- **Custom severity gate.** It queries unresolved `BUG` and `VULNERABILITY`
+  issues at `bug-severities` / `vulnerability-severities` (default
+  `BLOCKER,CRITICAL,MAJOR`) and fails the job if any exist, reporting a severity
+  breakdown.
