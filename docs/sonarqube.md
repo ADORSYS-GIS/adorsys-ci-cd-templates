@@ -78,8 +78,8 @@ jobs:
 
 Configure `SONAR_HOST_URL` and `SONAR_TOKEN` as repository secrets. The shared
 workflow accepts optional `source-dirs`, `exclusions`, `test-dirs`,
-`coverage-report-paths`, `fail-types`, `fail-severities`, and `analysis-timeout`
-inputs.
+`coverage-report-paths`, `fail-types`, `fail-severities`, `compliance-filters`,
+and `analysis-timeout` inputs.
 
 Like the GitLab job, the workflow follows these principles rather than delegating
 to the server-side quality gate:
@@ -90,12 +90,25 @@ to the server-side quality gate:
 - **No reliance on `sonar.qualitygate.wait`.** The scan runs with `wait=false`,
   then the analysis task is polled to completion (`analysis-timeout`, default
   300s, with retries on transient failures).
-- **Two independent gate conditions** (SonarQube Standard Experience). The job
-  fails when either query returns any unresolved issue:
+- **Three independent gate conditions** (SonarQube Standard Experience). The job
+  fails when any query returns an unresolved issue:
   - any issue of type `fail-types` (default `BUG,VULNERABILITY`), regardless of
-    severity; and
+    severity;
   - any issue of severity `fail-severities` (default `BLOCKER,CRITICAL,MAJOR`),
-    regardless of type (including code smells).
+    regardless of type (including code smells); and
+  - any issue matching a configured compliance-standard filter
+    (`compliance-filters`). This is a `;`-separated list of
+    `Label=api/issues/search-filter` entries (default: OWASP Top 10 2021 via
+    `owaspTop10-2021` and CWE Top 25 2024 via `cwe`). Set the input empty to
+    disable this condition.
 
   Security Hotspots are deprecated and now raised as vulnerabilities, so they are
   covered by the type condition — no separate hotspot query is needed.
+
+Only security standards exposed by the `api/issues/search` Web API can be used in
+`compliance-filters` — for example `owaspTop10-2021`, `owaspTop10`, `cwe`, `casa`,
+`owaspAsvs-4.0`, `pciDss-4.0`, `sonarsourceSecurity`, and `stig-ASD_V5R3`. OWASP
+Top 10 2025, OWASP Top 10 for LLM, and the EU Cyber Resilience Act are not
+available as issue filters (they appear only in the Enterprise Compliance reports
+UI), so they cannot be enforced as a CI gate. To add CASA, append an entry such
+as `CASA=casa=<categories>` with categories your instance recognises.
