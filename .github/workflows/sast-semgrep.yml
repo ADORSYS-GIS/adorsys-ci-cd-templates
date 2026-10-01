@@ -23,9 +23,9 @@ jobs:
         continue-on-error: ${{ github.base_ref != 'develop' && github.base_ref != 'main' && github.base_ref != 'master' && github.ref_name != 'develop' && github.ref_name != 'main' && github.ref_name != 'master' }}
         working-directory: ${{ inputs.working-directory }}
         run: |
-          docker run --rm --entrypoint "" -v "$PWD:$PWD" -w "$PWD" \
+          docker run --rm --entrypoint "" -v "$PWD:/src" -w "/src" \
             returntocorp/semgrep:1.178.0 \
-            semgrep scan --config auto --sarif --output semgrep.sarif
+            semgrep scan --config auto --sarif --output /src/semgrep.sarif
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@eaec7bdd3f18a9ef62b9f0d85d410932cf58c886 # v3.38.2
         with:
