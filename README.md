@@ -33,4 +33,5 @@ projects.
 
 - [GitHub reusable build workflows](docs/github-build.md)
 - [GitHub reusable lint workflows](docs/github-lint.md)
+- [Reusable SAST workflows (GitHub + GitLab)](docs/sast.md)
 - [SonarQube scan setup and usage](docs/sonarqube.md)

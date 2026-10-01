@@ -1,0 +1,32 @@
+name: SAST IaC
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        required: true
+        type: string
+      working-directory:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  scan:
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkov
+        continue-on-error: ${{ github.base_ref != 'develop' && github.base_ref != 'main' && github.base_ref != 'master' && github.ref_name != 'develop' && github.ref_name != 'main' && github.ref_name != 'master' }}
+        uses: bridgecrewio/checkov-action@99bb2caf247dfd9f03cf984373bc6043d4e32ebf # v12.1347.0
+        with:
+          directory: ${{ inputs.working-directory }}
+          output_format: sarif
+          output_file_path: checkov.sarif,
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@eaec7bdd3f18a9ef62b9f0d85d410932cf58c886 # v3.38.2
+        with:
+          sarif_file: checkov.sarif

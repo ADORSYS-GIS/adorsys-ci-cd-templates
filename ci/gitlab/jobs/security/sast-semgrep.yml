@@ -1,0 +1,16 @@
+.sast-semgrep:
+  image:
+    name: returntocorp/semgrep:1.178.0
+    entrypoint: [""]
+  stage: Security
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - when: on_success
+  script:
+    - semgrep scan --config auto --sarif --output semgrep.sarif
+  artifacts:
+    when: always
+    paths:
+      - semgrep.sarif
+    expire_in: "30 days"

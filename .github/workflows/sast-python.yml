@@ -1,0 +1,38 @@
+name: SAST Python
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        required: true
+        type: string
+      working-directory:
+        required: true
+        type: string
+      python-version:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  scan:
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ inputs.python-version }}
+      - name: Bandit
+        continue-on-error: ${{ github.base_ref != 'develop' && github.base_ref != 'main' && github.base_ref != 'master' && github.ref_name != 'develop' && github.ref_name != 'main' && github.ref_name != 'master' }}
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          python -m venv .sast-venv
+          .sast-venv/bin/pip install bandit==1.9.4
+          .sast-venv/bin/bandit -r . -f sarif -o bandit.sarif
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@eaec7bdd3f18a9ef62b9f0d85d410932cf58c886 # v3.38.2
+        with:
+          sarif_file: ${{ inputs.working-directory }}/bandit.sarif

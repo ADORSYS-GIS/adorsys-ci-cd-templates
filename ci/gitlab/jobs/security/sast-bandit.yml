@@ -1,0 +1,14 @@
+.sast-bandit:
+  image: ghcr.io/pycqa/bandit/bandit:1.9.4
+  stage: Security
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - when: on_success
+  script:
+    - bandit -r . -f sarif -o bandit.sarif
+  artifacts:
+    when: always
+    paths:
+      - bandit.sarif
+    expire_in: "30 days"
