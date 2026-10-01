@@ -17,11 +17,23 @@
     - |
       set -eu
       : "${ADORSYS_CI_TEMPLATES_PROJECT:?Set ADORSYS_CI_TEMPLATES_PROJECT as a project/group CI/CD variable}"
-      semgrep scan --config auto --sarif --output semgrep.sarif || true
-      TPL_FILE="scripts/sast/sarif-to-html.py" TPL_DST="/tmp/sarif-to-html.py" python3 -c 'import os,urllib.parse,urllib.request; proj=urllib.parse.quote(os.environ["ADORSYS_CI_TEMPLATES_PROJECT"],safe=""); path=urllib.parse.quote(os.environ["TPL_FILE"],safe=""); ref=os.environ.get("ADORSYS_CI_TEMPLATES_REF","main"); url=os.environ["CI_API_V4_URL"]+"/projects/"+proj+"/repository/files/"+path+"/raw?ref="+ref; req=urllib.request.Request(url,headers={"JOB-TOKEN":os.environ["CI_JOB_TOKEN"]}); open(os.environ["TPL_DST"],"wb").write(urllib.request.urlopen(req).read())'
-      python3 /tmp/sarif-to-html.py semgrep.sarif semgrep.html
+      # The semgrep image sets SEMGREP_IN_DOCKER, which makes semgrep require the code at
+      # /src; in GitLab the checkout is the job working directory, so clear it and scan '.'.
+      unset SEMGREP_IN_DOCKER || true
+      semgrep scan --config auto --sarif --output semgrep.sarif . || true
+      # Render the SARIF as HTML using the shared renderer fetched from the templates
+      # project. The fetch authenticates with GITLAB_TOKEN (PRIVATE-TOKEN) when set, else
+      # the CI job token. If it still fails (e.g. HTTP 403), keep the job green by emitting
+      # a minimal HTML that points to the SARIF instead.
+      if TPL_FILE="scripts/sast/sarif-to-html.py" TPL_DST="/tmp/sarif-to-html.py" python3 -c 'import os,urllib.parse,urllib.request; proj=urllib.parse.quote(os.environ["ADORSYS_CI_TEMPLATES_PROJECT"],safe=""); path=urllib.parse.quote(os.environ["TPL_FILE"],safe=""); ref=os.environ.get("ADORSYS_CI_TEMPLATES_REF","main"); url=os.environ["CI_API_V4_URL"]+"/projects/"+proj+"/repository/files/"+path+"/raw?ref="+ref; req=urllib.request.Request(url,headers=({"PRIVATE-TOKEN":os.environ["GITLAB_TOKEN"]} if os.environ.get("GITLAB_TOKEN") else {"JOB-TOKEN":os.environ["CI_JOB_TOKEN"]})); open(os.environ["TPL_DST"],"wb").write(urllib.request.urlopen(req).read())'; then
+        python3 /tmp/sarif-to-html.py semgrep.sarif semgrep.html
+      else
+        echo "WARNING: could not fetch scripts/sast/sarif-to-html.py from '${ADORSYS_CI_TEMPLATES_PROJECT}'. Ensure GITLAB_TOKEN (or this project's CI_JOB_TOKEN) can read that project's repository. Emitting a placeholder report." >&2
+        printf '%s\n' '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Semgrep SAST report</title></head><body><h1>Semgrep SAST report</h1><p>The shared HTML renderer could not be fetched from the CI templates project (authorization error — check GITLAB_TOKEN/CI_JOB_TOKEN access). Raw results are in the <code>semgrep.sarif</code> artifact.</p></body></html>' > semgrep.html
+      fi
   artifacts:
     when: always
     paths:
       - semgrep.html
+      - semgrep.sarif
     expire_in: "30 days"
