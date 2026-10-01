@@ -1,21 +1,63 @@
-# IaC SAST (Checkov). Emits SARIF, then renders a human-readable HTML report
-# with the shared scripts/sast/sarif-to-html.py fetched from the templates
-# project at runtime. Requires ADORSYS_CI_TEMPLATES_PROJECT to be set.
+# IaC SAST (Checkov). Emits SARIF, renders a human-readable HTML report, and
+# converts the SARIF into a GitLab SAST report (scripts/sast/sarif-to-gitlab.py)
+# which also applies the severity gate (SAST_FAIL_SEVERITIES). The shared helper
+# scripts are fetched from the templates project at runtime. Requires
+# ADORSYS_CI_TEMPLATES_PROJECT to be set.
 .sast-checkov:
   image: bridgecrew/checkov:3.3.20
   stage: Security
   variables:
     ADORSYS_CI_TEMPLATES_PROJECT: ""
     ADORSYS_CI_TEMPLATES_REF: "main"
+    # Severities that fail the job. Set empty for report-only (no gate).
+    SAST_FAIL_SEVERITIES: "CRITICAL,HIGH"
+  # Same execution policy as the other security scanners: hard-fail on protected
+  # pushes and MRs targeting a protected branch (and on security-scan schedules);
+  # soft-fail on non-protected pushes and MRs; skip release/rollback runs and the
+  # duplicate push pipeline when an MR is already open.
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$MAVEN_RELEASE_RUN == "true"'
       when: never
-    - when: on_success
+    - if: '$MAVEN_RELEASE_ROLLBACK == "true"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && ($SCHEDULE_TYPE == "security-scan")'
+      when: always
+      allow_failure: false
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"'
+      when: on_success
+      allow_failure: false
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_PROTECTED == "true"'
+      when: on_success
+      allow_failure: false
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED != "true"'
+      when: on_success
+      allow_failure: true
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_PROTECTED != "true"'
+      when: on_success
+      allow_failure: true
+    - when: never
   script:
     - |
       set -eu
       : "${ADORSYS_CI_TEMPLATES_PROJECT:?Set ADORSYS_CI_TEMPLATES_PROJECT as a project/group CI/CD variable}"
-      checkov --directory . --output sarif > checkov.sarif || true
+
+      # Fetches a file from the shared CI templates project into $2. Authenticates
+      # with GITLAB_TOKEN (PRIVATE-TOKEN) when set, else the CI job token.
+      fetch_tpl() {
+        TPL_FILE="$1" TPL_DST="$2" python3 -c 'import os,urllib.parse,urllib.request; proj=urllib.parse.quote(os.environ["ADORSYS_CI_TEMPLATES_PROJECT"],safe=""); path=urllib.parse.quote(os.environ["TPL_FILE"],safe=""); ref=os.environ.get("ADORSYS_CI_TEMPLATES_REF","main"); url=os.environ["CI_API_V4_URL"]+"/projects/"+proj+"/repository/files/"+path+"/raw?ref="+ref; req=urllib.request.Request(url,headers=({"PRIVATE-TOKEN":os.environ["GITLAB_TOKEN"]} if os.environ.get("GITLAB_TOKEN") else {"JOB-TOKEN":os.environ["CI_JOB_TOKEN"]})); open(os.environ["TPL_DST"],"wb").write(urllib.request.urlopen(req).read())'
+      }
+
+      # --soft-fail keeps exit 0 for findings (gating is severity-based, below), so
+      # any non-zero exit means a genuine scanner error that must not be swallowed
+      # into a green "no findings".
+      rc=0
+      checkov --directory . --soft-fail --output sarif > checkov.sarif || rc=$?
+      if [ "$rc" -ne 0 ]; then
+        echo "ERROR: Checkov failed to run (exit ${rc}); failing instead of reporting a silent pass." >&2
+        exit 1
+      fi
       # Render the SARIF as HTML using the shared renderer fetched from the templates
       # project. The fetch authenticates with GITLAB_TOKEN (PRIVATE-TOKEN) when set, else
       # the CI job token. If it still fails (e.g. HTTP 403), keep the job green by emitting
@@ -26,9 +68,22 @@
         echo "WARNING: could not fetch scripts/sast/sarif-to-html.py from '${ADORSYS_CI_TEMPLATES_PROJECT}'. Ensure GITLAB_TOKEN (or this project's CI_JOB_TOKEN) can read that project's repository. Emitting a placeholder report." >&2
         printf '%s\n' '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Checkov SAST report</title></head><body><h1>Checkov SAST report</h1><p>The shared HTML renderer could not be fetched from the CI templates project (authorization error — check GITLAB_TOKEN/CI_JOB_TOKEN access). Raw results are in the <code>checkov.sarif</code> artifact.</p></body></html>' > checkov.html
       fi
+
+      # GitLab SAST report + severity gate: surfaces findings in the MR/Vulnerability
+      # Report and exits non-zero when a finding reaches a gated severity
+      # (SAST_FAIL_SEVERITIES). A fetch failure here is fatal — the gate could not
+      # be evaluated.
+      if ! fetch_tpl "scripts/sast/sarif-to-gitlab.py" /tmp/sarif-to-gitlab.py; then
+        echo "ERROR: could not fetch scripts/sast/sarif-to-gitlab.py from '${ADORSYS_CI_TEMPLATES_PROJECT}'; cannot build the GitLab SAST report or evaluate the gate." >&2
+        exit 1
+      fi
+      python3 /tmp/sarif-to-gitlab.py checkov.sarif gl-sast-report.json checkov
   artifacts:
     when: always
+    reports:
+      sast: gl-sast-report.json
     paths:
       - checkov.html
       - checkov.sarif
+      - gl-sast-report.json
     expire_in: "30 days"

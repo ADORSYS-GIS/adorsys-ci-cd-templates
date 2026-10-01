@@ -1,0 +1,149 @@
+# JavaScript/TypeScript SAST (ESLint + eslint-plugin-security). Catches the
+# security-relevant sinks in frontend TS/JS (the HTML/CSS gap is largely risk in
+# the TS behind Angular templates). Emits SARIF, an HTML report, and a GitLab
+# SAST report + severity gate (scripts/sast/sarif-to-gitlab.py, honouring
+# SAST_FAIL_SEVERITIES). The security rules are heuristic and set to "warn"
+# (-> Medium), so with the default gate (CRITICAL,HIGH) findings are surfaced but
+# do not block; add MEDIUM to SAST_FAIL_SEVERITIES to enforce them. The tooling is
+# installed into an isolated dir so the scan never touches the project's own
+# dependencies. Requires ADORSYS_CI_TEMPLATES_PROJECT to be set.
+.sast-eslint:
+  image: node:22-alpine
+  stage: Security
+  variables:
+    ADORSYS_CI_TEMPLATES_PROJECT: ""
+    ADORSYS_CI_TEMPLATES_REF: "main"
+    # Severities that fail the job. Set empty for report-only; add MEDIUM to gate
+    # ESLint security findings (e.g. "CRITICAL,HIGH,MEDIUM").
+    SAST_FAIL_SEVERITIES: "CRITICAL,HIGH"
+    # Paths to scan (space-separated), relative to the repo root.
+    ESLINT_SOURCE_DIRS: "."
+    ESLINT_VERSION: "9.17.0"
+    TS_PARSER_VERSION: "8.19.1"
+    ESLINT_SECURITY_VERSION: "3.0.1"
+    ESLINT_SARIF_FORMATTER_VERSION: "3.1.0"
+  # Same execution policy as the other security scanners: hard-fail on protected
+  # pushes and MRs targeting a protected branch (and on security-scan schedules);
+  # soft-fail on non-protected pushes and MRs; skip release/rollback runs and the
+  # duplicate push pipeline when an MR is already open.
+  rules:
+    - if: '$MAVEN_RELEASE_RUN == "true"'
+      when: never
+    - if: '$MAVEN_RELEASE_ROLLBACK == "true"'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && ($SCHEDULE_TYPE == "security-scan")'
+      when: always
+      allow_failure: false
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"'
+      when: on_success
+      allow_failure: false
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_PROTECTED == "true"'
+      when: on_success
+      allow_failure: false
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED != "true"'
+      when: on_success
+      allow_failure: true
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_PROTECTED != "true"'
+      when: on_success
+      allow_failure: true
+    - when: never
+  before_script:
+    - apk add --no-cache python3
+  script:
+    - |
+      set -eu
+      : "${ADORSYS_CI_TEMPLATES_PROJECT:?Set ADORSYS_CI_TEMPLATES_PROJECT as a project/group CI/CD variable}"
+
+      # Fetches a file from the shared CI templates project into $2. Authenticates
+      # with GITLAB_TOKEN (PRIVATE-TOKEN) when set, else the CI job token.
+      fetch_tpl() {
+        TPL_FILE="$1" TPL_DST="$2" python3 -c 'import os,urllib.parse,urllib.request; proj=urllib.parse.quote(os.environ["ADORSYS_CI_TEMPLATES_PROJECT"],safe=""); path=urllib.parse.quote(os.environ["TPL_FILE"],safe=""); ref=os.environ.get("ADORSYS_CI_TEMPLATES_REF","main"); url=os.environ["CI_API_V4_URL"]+"/projects/"+proj+"/repository/files/"+path+"/raw?ref="+ref; req=urllib.request.Request(url,headers=({"PRIVATE-TOKEN":os.environ["GITLAB_TOKEN"]} if os.environ.get("GITLAB_TOKEN") else {"JOB-TOKEN":os.environ["CI_JOB_TOKEN"]})); open(os.environ["TPL_DST"],"wb").write(urllib.request.urlopen(req).read())'
+      }
+
+      # Install the scanner tooling in isolation (never the project's own deps).
+      TOOLDIR="/tmp/eslint-sast"
+      mkdir -p "$TOOLDIR"
+      ( cd "$TOOLDIR" \
+        && npm init -y >/dev/null 2>&1 \
+        && npm install --no-audit --no-fund --silent \
+             "eslint@${ESLINT_VERSION}" \
+             "@typescript-eslint/parser@${TS_PARSER_VERSION}" \
+             "eslint-plugin-security@${ESLINT_SECURITY_VERSION}" \
+             "@microsoft/eslint-formatter-sarif@${ESLINT_SARIF_FORMATTER_VERSION}" )
+
+      # Self-contained flat config: security plugin over TS/JS, vendored code ignored.
+      cat > "$TOOLDIR/eslint.config.mjs" <<'EOF'
+      import security from "eslint-plugin-security";
+      import tsParser from "@typescript-eslint/parser";
+      const warn = "warn";
+      export default [
+        { ignores: ["**/node_modules/**", "**/dist/**", "**/build/**", "**/coverage/**", "**/*.min.js", "**/vendor/**"] },
+        {
+          files: ["**/*.{js,jsx,mjs,cjs,ts,tsx}"],
+          plugins: { security },
+          languageOptions: { parser: tsParser, ecmaVersion: "latest", sourceType: "module" },
+          rules: {
+            "security/detect-bidi-characters": warn,
+            "security/detect-buffer-noassert": warn,
+            "security/detect-child-process": warn,
+            "security/detect-disable-mustache-escape": warn,
+            "security/detect-eval-with-expression": warn,
+            "security/detect-new-buffer": warn,
+            "security/detect-no-csrf-before-method-override": warn,
+            "security/detect-non-literal-fs-filename": warn,
+            "security/detect-non-literal-regexp": warn,
+            "security/detect-non-literal-require": warn,
+            "security/detect-object-injection": warn,
+            "security/detect-possible-timing-attacks": warn,
+            "security/detect-pseudoRandomBytes": warn,
+            "security/detect-unsafe-regex": warn
+          }
+        }
+      ];
+      EOF
+
+      FORMATTER=$(cd "$TOOLDIR" && node -e "console.log(require.resolve('@microsoft/eslint-formatter-sarif'))")
+
+      # Findings must not crash the job (gating is severity-based); exit >= 2 is a
+      # fatal ESLint error and must not be swallowed into a green "no findings".
+      rc=0
+      node "$TOOLDIR/node_modules/eslint/bin/eslint.js" \
+        --config "$TOOLDIR/eslint.config.mjs" \
+        --no-config-lookup \
+        --no-error-on-unmatched-pattern \
+        -f "$FORMATTER" \
+        -o eslint.sarif \
+        ${ESLINT_SOURCE_DIRS} || rc=$?
+      if [ "$rc" -ge 2 ]; then
+        echo "ERROR: ESLint failed to run (exit ${rc}); failing instead of reporting a silent pass." >&2
+        exit 1
+      fi
+      # ESLint writes the SARIF via -o; keep a valid empty report if it produced none.
+      [ -f eslint.sarif ] || printf '%s\n' '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"ESLint"}},"results":[]}]}' > eslint.sarif
+
+      # Human-readable HTML report (best effort: a fetch failure must not hide findings).
+      if fetch_tpl "scripts/sast/sarif-to-html.py" /tmp/sarif-to-html.py; then
+        python3 /tmp/sarif-to-html.py eslint.sarif eslint.html
+      else
+        echo "WARNING: could not fetch sarif-to-html.py from '${ADORSYS_CI_TEMPLATES_PROJECT}' (check GITLAB_TOKEN/CI_JOB_TOKEN access). Emitting a placeholder." >&2
+        printf '%s\n' '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>ESLint SAST report</title></head><body><h1>ESLint SAST report</h1><p>The shared HTML renderer could not be fetched. Raw results are in <code>eslint.sarif</code>.</p></body></html>' > eslint.html
+      fi
+
+      # GitLab SAST report + severity gate. A fetch failure here is fatal — the gate
+      # could not be evaluated.
+      if ! fetch_tpl "scripts/sast/sarif-to-gitlab.py" /tmp/sarif-to-gitlab.py; then
+        echo "ERROR: could not fetch scripts/sast/sarif-to-gitlab.py from '${ADORSYS_CI_TEMPLATES_PROJECT}'; cannot build the GitLab SAST report or evaluate the gate." >&2
+        exit 1
+      fi
+      python3 /tmp/sarif-to-gitlab.py eslint.sarif gl-sast-report.json eslint
+  artifacts:
+    when: always
+    reports:
+      sast: gl-sast-report.json
+    paths:
+      - eslint.html
+      - eslint.sarif
+      - gl-sast-report.json
+    expire_in: "30 days"
