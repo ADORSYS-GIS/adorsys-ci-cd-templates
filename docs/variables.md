@@ -50,7 +50,7 @@ required by that job.
 | `TRIVY_IMAGE` | Trivy image scan | Project |
 | `TRIVY_SEVERITY`, `TRIVY_SKIP_FILES`, `TRIVY_TIMEOUT`, `TRIVY_FORMAT` | Trivy scans; optional overrides | Project |
 | `SONAR_SOURCE_DIRS`, `SONAR_EXCLUSIONS`, `SONAR_JAVASCRIPT_LCOV_REPORT_PATHS` | SonarQube CLI scans; optional overrides | Project |
-| `SONAR_ENABLE_SUPPORT_BRANCH_ANALYSIS`, `SONAR_ANALYSIS_TIMEOUT`, `SONAR_FAIL_TYPES`, `SONAR_FAIL_SEVERITIES`, `SONAR_COMPLIANCE_FILTERS` | SonarQube Maven and CLI scans; optional overrides (`SONAR_FAIL_TYPES` defaults `BUG,VULNERABILITY`, `SONAR_FAIL_SEVERITIES` defaults `BLOCKER,CRITICAL,MAJOR`, `SONAR_COMPLIANCE_FILTERS` is a `;`-separated list of `Label=api/issues/search-filter` entries defaulting to OWASP Top 10 2021 + CWE Top 25 — set empty to disable the compliance gate) | Project |
+| `SONAR_ENABLE_SUPPORT_BRANCH_ANALYSIS`, `SONAR_ANALYSIS_TIMEOUT`, `SONAR_FAIL_TYPES`, `SONAR_FAIL_SEVERITIES`, `SONAR_COMPLIANCE_FILTERS` | SonarQube Maven and CLI scans; optional overrides (`SONAR_FAIL_TYPES` defaults `BUG,VULNERABILITY`, `SONAR_FAIL_SEVERITIES` defaults `BLOCKER,CRITICAL,MAJOR`, `SONAR_COMPLIANCE_FILTERS` is a `;`-separated list of `Label=filter=values` (explicit categories) or `Label=facet` (all categories, discovered from the `api/issues/search` facet) entries, defaulting to OWASP Top 10 2021 + CWE Top 25 2024 + PCI DSS 4.0 + OWASP ASVS 4.0 + STIG ASD V5R3 + CASA — set empty to disable the compliance gate) | Project |
 | `GITLAB_CI_TEMPLATES_REF`, `SECURITY_BASE_BRANCH`, `SEVERITY_FILTER`, `OFFLINE_MODE` | Unified remediation; optional overrides | Project |
 | `SCHEDULE_TYPE` | Scheduled npm audit, Renovate, and remediation jobs | Pipeline schedule |
 

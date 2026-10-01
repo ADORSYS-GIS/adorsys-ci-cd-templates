@@ -97,18 +97,27 @@ to the server-side quality gate:
   - any issue of severity `fail-severities` (default `BLOCKER,CRITICAL,MAJOR`),
     regardless of type (including code smells); and
   - any issue matching a configured compliance-standard filter
-    (`compliance-filters`). This is a `;`-separated list of
-    `Label=api/issues/search-filter` entries (default: OWASP Top 10 2021 via
-    `owaspTop10-2021` and CWE Top 25 2024 via `cwe`). Set the input empty to
-    disable this condition.
+    (`compliance-filters`). This is a `;`-separated list of entries, each either
+    `Label=filter=values` (explicit categories) or `Label=facet` (all categories
+    of a standard, discovered from the `api/issues/search` facet). The default
+    gates OWASP Top 10 2021 (`owaspTop10-2021`), CWE Top 25 2024 (`cwe`), PCI DSS
+    4.0 (`pciDss-4.0`), OWASP ASVS 4.0 (`owaspAsvs-4.0`), STIG ASD V5R3
+    (`stig-ASD_V5R3`), and CASA (`casa`). Set the input empty to disable this
+    condition.
 
   Security Hotspots are deprecated and now raised as vulnerabilities, so they are
   covered by the type condition — no separate hotspot query is needed.
 
 Only security standards exposed by the `api/issues/search` Web API can be used in
 `compliance-filters` — for example `owaspTop10-2021`, `owaspTop10`, `cwe`, `casa`,
-`owaspAsvs-4.0`, `pciDss-4.0`, `sonarsourceSecurity`, and `stig-ASD_V5R3`. OWASP
-Top 10 2025, OWASP Top 10 for LLM, and the EU Cyber Resilience Act are not
-available as issue filters (they appear only in the Enterprise Compliance reports
-UI), so they cannot be enforced as a CI gate. To add CASA, append an entry such
-as `CASA=casa=<categories>` with categories your instance recognises.
+`owaspAsvs-4.0`, `pciDss-4.0`, `pciDss-3.2`, `sonarsourceSecurity`, and
+`stig-ASD_V5R3`. OWASP Top 10 2025, OWASP Top 10 for LLM, and the EU Cyber
+Resilience Act are not available as issue filters (they appear only in the
+Enterprise Compliance reports UI), so they cannot be enforced as a CI gate.
+
+Standards with no fixed category list (PCI DSS, OWASP ASVS, STIG, CASA) are best
+added as a value-less `Label=facet` entry (e.g. `PCI DSS 4.0=pciDss-4.0`): the gate
+reads the facet to discover which categories are present, then counts the distinct
+mapped issues. Use the `Label=filter=values` form only when you want to gate a
+specific, fixed subset of categories (as the OWASP Top 10 and CWE Top 25 defaults
+do).
