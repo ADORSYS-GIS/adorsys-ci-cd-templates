@@ -92,60 +92,83 @@
       if [ "${CI_PIPELINE_SOURCE:-}" = "merge_request_event" ]; then
         issue_scope="pullRequest=${CI_MERGE_REQUEST_IID}"
       fi
-      bug_severities="${SONAR_BUG_SEVERITIES:-BLOCKER,CRITICAL,MAJOR}"
-      vulnerability_severities="${SONAR_VULNERABILITY_SEVERITIES:-BLOCKER,CRITICAL,MAJOR}"
+      fail_types="${SONAR_FAIL_TYPES:-BUG,VULNERABILITY}"
+      fail_severities="${SONAR_FAIL_SEVERITIES:-BLOCKER,CRITICAL,MAJOR}"
+      type_label=$(printf '%s' "$fail_types" | tr 'A-Z,' 'a-z/')
+      severity_label=$(printf '%s' "$fail_severities" | tr 'A-Z,' 'a-z/')
 
-      # Reports only the severities that actually have unresolved issues (not the full
-      # configured severity list), e.g. "blocker/major" when critical has zero issues.
-      severity_breakdown() {
-        issue_type="$1"
-        severities_csv="$2"
-        breakdown_total=0
-        breakdown_found=""
+      # Counts unresolved issues matching a single api/issues/search filter.
+      count_issues() {
+        body=$(sonar_api_get "${SONAR_HOST_URL}/api/issues/search?componentKeys=${project_key}&${issue_scope}&${1}&resolved=false&ps=1")
+        json_field "$body" total
+      }
+
+      # Two independent gate conditions (Standard Experience): fail on any bug or
+      # vulnerability (any severity), and on any BLOCKER/CRITICAL/MAJOR issue (any
+      # type, including code smells). Former Security Hotspots now raise
+      # vulnerabilities, so they are covered by the type condition.
+      type_count=$(count_issues "types=${fail_types}")
+      severity_count=$(count_issues "severities=${fail_severities}")
+
+      # Compliance-standard gate. SONAR_COMPLIANCE_FILTERS is a ';'-separated list
+      # of "Label=api/issues/search-filter" entries; the gate fails if any entry
+      # matches an unresolved issue. Only standards exposed by api/issues/search
+      # can be used (e.g. owaspTop10-2021, owaspTop10, cwe, casa, owaspAsvs-4.0,
+      # pciDss-4.0, sonarsourceSecurity, stig-ASD_V5R3). EU CRA and OWASP Top 10
+      # for LLM are not issue-search filters, so they cannot be gated here. Clear
+      # the variable to disable this condition.
+      compliance_filters="${SONAR_COMPLIANCE_FILTERS:-OWASP Top 10 2021=owaspTop10-2021=a1,a2,a3,a4,a5,a6,a7,a8,a9,a10;CWE Top 25 2024=cwe=79,787,89,352,22,125,78,416,862,434,94,20,77,287,269,502,200,863,918,119,476,798,190,400,306}"
+      compliance_count=0
+      compliance_found=""
+      if [ -n "$compliance_filters" ]; then
         old_ifs="$IFS"
-        IFS=','
-        set -- $severities_csv
+        set -f
+        IFS=';'
+        set -- $compliance_filters
         IFS="$old_ifs"
-        for sev in "$@"; do
-          sev_body=$(sonar_api_get "${SONAR_HOST_URL}/api/issues/search?componentKeys=${project_key}&${issue_scope}&types=${issue_type}&severities=${sev}&resolved=false&ps=1")
-          sev_count=$(json_field "$sev_body" total)
-          if [ "$sev_count" -gt 0 ]; then
-            breakdown_total=$((breakdown_total + sev_count))
-            sev_lower=$(printf '%s' "$sev" | tr '[:upper:]' '[:lower:]')
-            if [ -z "$breakdown_found" ]; then
-              breakdown_found="$sev_lower"
+        set +f
+        for entry in "$@"; do
+          [ -n "$entry" ] || continue
+          compliance_label="${entry%%=*}"
+          compliance_filter="${entry#*=}"
+          entry_count=$(count_issues "$compliance_filter")
+          echo "Compliance [${compliance_label}]: ${entry_count} unresolved mapped issue(s)."
+          if [ "$entry_count" -gt 0 ]; then
+            compliance_count=$((compliance_count + entry_count))
+            if [ -z "$compliance_found" ]; then
+              compliance_found="$compliance_label"
             else
-              breakdown_found="${breakdown_found}/${sev_lower}"
+              compliance_found="${compliance_found}, ${compliance_label}"
             fi
           fi
         done
-        printf '%s|%s' "$breakdown_total" "$breakdown_found"
-      }
+      fi
 
-      bug_breakdown=$(severity_breakdown BUG "$bug_severities")
-      bug_count="${bug_breakdown%%|*}"
-      bug_found="${bug_breakdown#*|}"
-      vulnerability_breakdown=$(severity_breakdown VULNERABILITY "$vulnerability_severities")
-      vulnerability_count="${vulnerability_breakdown%%|*}"
-      vulnerability_found="${vulnerability_breakdown#*|}"
-
-      if [ "$bug_count" -gt 0 ] || [ "$vulnerability_count" -gt 0 ]; then
+      if [ "$type_count" -gt 0 ] || [ "$severity_count" -gt 0 ] || [ "$compliance_count" -gt 0 ]; then
         message=""
-        if [ "$bug_count" -gt 0 ]; then
-          message="${bug_count} unresolved ${bug_found} bug(s)"
+        if [ "$type_count" -gt 0 ]; then
+          message="${type_count} unresolved ${type_label} issue(s)"
         fi
-        if [ "$vulnerability_count" -gt 0 ]; then
-          vulnerability_message="${vulnerability_count} unresolved ${vulnerability_found} vulnerabilit(ies)"
+        if [ "$severity_count" -gt 0 ]; then
+          severity_message="${severity_count} unresolved ${severity_label} issue(s)"
           if [ -n "$message" ]; then
-            message="${message} and ${vulnerability_message}"
+            message="${message} and ${severity_message}"
           else
-            message="$vulnerability_message"
+            message="$severity_message"
+          fi
+        fi
+        if [ "$compliance_count" -gt 0 ]; then
+          compliance_message="${compliance_count} unresolved issue(s) mapped to ${compliance_found}"
+          if [ -n "$message" ]; then
+            message="${message} and ${compliance_message}"
+          else
+            message="$compliance_message"
           fi
         fi
         echo "ERROR: SonarQube found ${message}."
         exit 1
       fi
-      echo "SonarQube scan passed: no unresolved blocker/critical/major bugs or vulnerabilities."
+      echo "SonarQube scan passed: no unresolved bugs/vulnerabilities, no blocker/critical/major issues, and no compliance-standard findings."
   allow_failure: false
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'

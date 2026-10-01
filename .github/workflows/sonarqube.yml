@@ -1,5 +1,10 @@
 name: SonarQube Scan
 
+# Mirrors the GitLab SonarQube gate (ci/gitlab/jobs/security/sonarqube.yml):
+# full-branch analysis (never PR mode), poll the analysis task instead of
+# trusting qualitygate.wait, then fail on unresolved BLOCKER/CRITICAL/MAJOR
+# bugs or vulnerabilities.
+
 on:
   workflow_call:
     inputs:
@@ -24,6 +29,22 @@ on:
         type: string
       coverage-report-paths:
         default: ""
+        required: false
+        type: string
+      fail-types:
+        default: "BUG,VULNERABILITY"
+        required: false
+        type: string
+      fail-severities:
+        default: "BLOCKER,CRITICAL,MAJOR"
+        required: false
+        type: string
+      compliance-filters:
+        default: "OWASP Top 10 2021=owaspTop10-2021=a1,a2,a3,a4,a5,a6,a7,a8,a9,a10;CWE Top 25 2024=cwe=79,787,89,352,22,125,78,416,862,434,94,20,77,287,269,502,200,863,918,119,476,798,190,400,306"
+        required: false
+        type: string
+      analysis-timeout:
+        default: "300"
         required: false
         type: string
     secrets:
@@ -57,6 +78,11 @@ jobs:
             (cd "$dir" && pytest --cov=. --cov-report=xml:coverage.xml)
           done
 
+      # Full source-branch analysis so PRs scan the whole codebase, not just the diff.
+      - name: Resolve analysis branch
+        id: branch
+        run: echo "name=${{ github.head_ref || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
       - uses: SonarSource/sonarqube-scan-action@v7
         env:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
@@ -67,5 +93,153 @@ jobs:
             -Dsonar.sources=${{ inputs.source-dirs }}
             -Dsonar.exclusions=${{ inputs.exclusions }}
             -Dsonar.python.coverage.reportPaths=${{ inputs.coverage-report-paths }}
-            -Dsonar.qualitygate.wait=true
-            -Dsonar.qualitygate.timeout=300
+            -Dsonar.branch.name=${{ steps.branch.outputs.name }}
+            -Dsonar.qualitygate.wait=false
+
+      # Replaces qualitygate.wait: poll the task, then fail on unresolved severe issues.
+      - name: SonarQube quality gate
+        env:
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_BRANCH_NAME: ${{ steps.branch.outputs.name }}
+          SONAR_FAIL_TYPES: ${{ inputs.fail-types }}
+          SONAR_FAIL_SEVERITIES: ${{ inputs.fail-severities }}
+          SONAR_COMPLIANCE_FILTERS: ${{ inputs.compliance-filters }}
+          SONAR_ANALYSIS_TIMEOUT: ${{ inputs.analysis-timeout }}
+        run: |
+          set -eu
+
+          : "${SONAR_HOST_URL:?SONAR_HOST_URL must be configured as a repository secret}"
+          : "${SONAR_TOKEN:?SONAR_TOKEN must be configured as a repository secret}"
+
+          # strip trailing slash to avoid a double slash in API URLs
+          SONAR_HOST_URL="${SONAR_HOST_URL%/}"
+
+          # GET a SonarQube API URL, failing loudly on non-2xx or non-JSON responses.
+          sonar_api_get() {
+            url="$1"
+            response=$(curl --silent --show-error -u "${SONAR_TOKEN}:" -w '\n%{http_code}' "$url")
+            http_code=$(printf '%s' "$response" | tail -n1)
+            body=$(printf '%s' "$response" | sed '$d')
+            if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+              echo "ERROR: SonarQube API request to ${url} failed with HTTP ${http_code}: ${body}" >&2
+              return 1
+            fi
+            if ! printf '%s' "$body" | jq -e . >/dev/null 2>&1; then
+              echo "ERROR: SonarQube API request to ${url} did not return valid JSON: ${body}" >&2
+              return 1
+            fi
+            printf '%s' "$body"
+          }
+
+          report_task_file=".scannerwork/report-task.txt"
+          task_id=$(sed -n 's/^ceTaskId=//p' "$report_task_file")
+          project_key=$(sed -n 's/^projectKey=//p' "$report_task_file")
+          : "${task_id:?SonarQube did not provide a background task id}"
+          : "${project_key:?SonarQube did not provide a project key}"
+
+          timeout_seconds="${SONAR_ANALYSIS_TIMEOUT:-300}"
+          elapsed_seconds=0
+          task_status="PENDING"
+          while [ "$elapsed_seconds" -lt "$timeout_seconds" ]; do
+            # retry transient failures instead of aborting
+            if ! task_body=$(sonar_api_get "${SONAR_HOST_URL}/api/ce/task?id=${task_id}"); then
+              sleep 5
+              elapsed_seconds=$((elapsed_seconds + 5))
+              continue
+            fi
+            task_status=$(printf '%s' "$task_body" | jq -r '.task.status')
+            case "$task_status" in
+              SUCCESS) break ;;
+              FAILED|CANCELED)
+                echo "ERROR: SonarQube analysis task ${task_id} finished with status ${task_status}."
+                exit 1
+                ;;
+            esac
+            sleep 5
+            elapsed_seconds=$((elapsed_seconds + 5))
+          done
+          if [ "$task_status" != "SUCCESS" ]; then
+            echo "ERROR: SonarQube analysis task ${task_id} did not finish within ${timeout_seconds}s."
+            exit 1
+          fi
+
+          # Query the analysed branch so the gate covers the whole codebase, not just PR changes.
+          issue_scope="branch=${SONAR_BRANCH_NAME}"
+          fail_types="${SONAR_FAIL_TYPES:-BUG,VULNERABILITY}"
+          fail_severities="${SONAR_FAIL_SEVERITIES:-BLOCKER,CRITICAL,MAJOR}"
+          type_label=$(printf '%s' "$fail_types" | tr 'A-Z,' 'a-z/')
+          severity_label=$(printf '%s' "$fail_severities" | tr 'A-Z,' 'a-z/')
+
+          # Counts unresolved issues matching a single api/issues/search filter.
+          count_issues() {
+            body=$(sonar_api_get "${SONAR_HOST_URL}/api/issues/search?componentKeys=${project_key}&${issue_scope}&${1}&resolved=false&ps=1")
+            printf '%s' "$body" | jq -r '.total'
+          }
+
+          # Two independent gate conditions (Standard Experience): fail on any bug or
+          # vulnerability (any severity), and on any BLOCKER/CRITICAL/MAJOR issue (any
+          # type, including code smells). Former Security Hotspots now raise
+          # vulnerabilities, so they are covered by the type condition.
+          type_count=$(count_issues "types=${fail_types}")
+          severity_count=$(count_issues "severities=${fail_severities}")
+
+          # Compliance-standard gate. SONAR_COMPLIANCE_FILTERS is a ';'-separated
+          # list of "Label=api/issues/search-filter" entries; the gate fails if any
+          # entry matches an unresolved issue. Only standards exposed by
+          # api/issues/search can be used (e.g. owaspTop10-2021, owaspTop10, cwe,
+          # casa, owaspAsvs-4.0, pciDss-4.0, sonarsourceSecurity, stig-ASD_V5R3).
+          # EU CRA and OWASP Top 10 for LLM are not issue-search filters, so they
+          # cannot be gated here. Clear the input to disable this condition.
+          compliance_filters="${SONAR_COMPLIANCE_FILTERS:-}"
+          compliance_count=0
+          compliance_found=""
+          if [ -n "$compliance_filters" ]; then
+            old_ifs="$IFS"
+            set -f
+            IFS=';'
+            set -- $compliance_filters
+            IFS="$old_ifs"
+            set +f
+            for entry in "$@"; do
+              [ -n "$entry" ] || continue
+              compliance_label="${entry%%=*}"
+              compliance_filter="${entry#*=}"
+              entry_count=$(count_issues "$compliance_filter")
+              echo "Compliance [${compliance_label}]: ${entry_count} unresolved mapped issue(s)."
+              if [ "$entry_count" -gt 0 ]; then
+                compliance_count=$((compliance_count + entry_count))
+                if [ -z "$compliance_found" ]; then
+                  compliance_found="$compliance_label"
+                else
+                  compliance_found="${compliance_found}, ${compliance_label}"
+                fi
+              fi
+            done
+          fi
+
+          if [ "$type_count" -gt 0 ] || [ "$severity_count" -gt 0 ] || [ "$compliance_count" -gt 0 ]; then
+            message=""
+            if [ "$type_count" -gt 0 ]; then
+              message="${type_count} unresolved ${type_label} issue(s)"
+            fi
+            if [ "$severity_count" -gt 0 ]; then
+              severity_message="${severity_count} unresolved ${severity_label} issue(s)"
+              if [ -n "$message" ]; then
+                message="${message} and ${severity_message}"
+              else
+                message="$severity_message"
+              fi
+            fi
+            if [ "$compliance_count" -gt 0 ]; then
+              compliance_message="${compliance_count} unresolved issue(s) mapped to ${compliance_found}"
+              if [ -n "$message" ]; then
+                message="${message} and ${compliance_message}"
+              else
+                message="$compliance_message"
+              fi
+            fi
+            echo "ERROR: SonarQube found ${message}."
+            exit 1
+          fi
+          echo "SonarQube scan passed: no unresolved bugs/vulnerabilities, no blocker/critical/major issues, and no compliance-standard findings."
