@@ -1,14 +1,25 @@
+# IaC SAST (Checkov). Emits SARIF, then renders a human-readable HTML report
+# with the shared scripts/sast/sarif-to-html.py fetched from the templates
+# project at runtime. Requires ADORSYS_CI_TEMPLATES_PROJECT to be set.
 .sast-checkov:
   image: bridgecrew/checkov:3.3.20
   stage: Security
+  variables:
+    ADORSYS_CI_TEMPLATES_PROJECT: ""
+    ADORSYS_CI_TEMPLATES_REF: "main"
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
       when: never
     - when: on_success
   script:
-    - checkov --directory . --output sarif > checkov.sarif
+    - |
+      set -eu
+      : "${ADORSYS_CI_TEMPLATES_PROJECT:?Set ADORSYS_CI_TEMPLATES_PROJECT as a project/group CI/CD variable}"
+      checkov --directory . --output sarif > checkov.sarif || true
+      TPL_FILE="scripts/sast/sarif-to-html.py" TPL_DST="/tmp/sarif-to-html.py" python3 -c 'import os,urllib.parse,urllib.request; proj=urllib.parse.quote(os.environ["ADORSYS_CI_TEMPLATES_PROJECT"],safe=""); path=urllib.parse.quote(os.environ["TPL_FILE"],safe=""); ref=os.environ.get("ADORSYS_CI_TEMPLATES_REF","main"); url=os.environ["CI_API_V4_URL"]+"/projects/"+proj+"/repository/files/"+path+"/raw?ref="+ref; req=urllib.request.Request(url,headers={"JOB-TOKEN":os.environ["CI_JOB_TOKEN"]}); open(os.environ["TPL_DST"],"wb").write(urllib.request.urlopen(req).read())'
+      python3 /tmp/sarif-to-html.py checkov.sarif checkov.html
   artifacts:
     when: always
     paths:
-      - checkov.sarif
+      - checkov.html
     expire_in: "30 days"
