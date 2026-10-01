@@ -1,6 +1,14 @@
+# Shell SAST for GitLab CI. ShellCheck has no native SARIF/HTML output, so its
+# JSON is converted to SARIF (shellcheck-sarif.py) then to a human-readable HTML
+# report (sarif-to-html.py); both shared scripts are fetched from the templates
+# project at runtime, so no per-project copy is needed. Requires
+# ADORSYS_CI_TEMPLATES_PROJECT to be set.
 .sast-shellcheck:
   image: python:3.12-alpine
   stage: Security
+  variables:
+    ADORSYS_CI_TEMPLATES_PROJECT: ""
+    ADORSYS_CI_TEMPLATES_REF: "main"
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
       when: never
@@ -9,13 +17,19 @@
     - apk add --no-cache shellcheck
   script:
     - |
+      set -eu
+      : "${ADORSYS_CI_TEMPLATES_PROJECT:?Set ADORSYS_CI_TEMPLATES_PROJECT as a project/group CI/CD variable}"
       FILES=$(find . -type f \( -name '*.sh' -o -name '*.bash' -o -name '*.zsh' \) 2>/dev/null || true)
       if [ -n "$FILES" ]; then
+        # shellcheck disable=SC2086
         shellcheck -f json $FILES > shellcheck.json || true
       fi
-      python3 scripts/sast/shellcheck-sarif.py
+      TPL_FILE="scripts/sast/shellcheck-sarif.py" TPL_DST="/tmp/shellcheck-sarif.py" python3 -c 'import os,urllib.parse,urllib.request; proj=urllib.parse.quote(os.environ["ADORSYS_CI_TEMPLATES_PROJECT"],safe=""); path=urllib.parse.quote(os.environ["TPL_FILE"],safe=""); ref=os.environ.get("ADORSYS_CI_TEMPLATES_REF","main"); url=os.environ["CI_API_V4_URL"]+"/projects/"+proj+"/repository/files/"+path+"/raw?ref="+ref; req=urllib.request.Request(url,headers={"JOB-TOKEN":os.environ["CI_JOB_TOKEN"]}); open(os.environ["TPL_DST"],"wb").write(urllib.request.urlopen(req).read())'
+      TPL_FILE="scripts/sast/sarif-to-html.py" TPL_DST="/tmp/sarif-to-html.py" python3 -c 'import os,urllib.parse,urllib.request; proj=urllib.parse.quote(os.environ["ADORSYS_CI_TEMPLATES_PROJECT"],safe=""); path=urllib.parse.quote(os.environ["TPL_FILE"],safe=""); ref=os.environ.get("ADORSYS_CI_TEMPLATES_REF","main"); url=os.environ["CI_API_V4_URL"]+"/projects/"+proj+"/repository/files/"+path+"/raw?ref="+ref; req=urllib.request.Request(url,headers={"JOB-TOKEN":os.environ["CI_JOB_TOKEN"]}); open(os.environ["TPL_DST"],"wb").write(urllib.request.urlopen(req).read())'
+      python3 /tmp/shellcheck-sarif.py
+      python3 /tmp/sarif-to-html.py shellcheck.sarif shellcheck.html
   artifacts:
     when: always
     paths:
-      - shellcheck.sarif
+      - shellcheck.html
     expire_in: "30 days"
