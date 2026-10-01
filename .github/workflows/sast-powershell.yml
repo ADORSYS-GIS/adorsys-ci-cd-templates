@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   security-events: write
 
 jobs:
@@ -28,6 +29,6 @@ jobs:
             mcr.microsoft.com/powershell:7.6.6 \
             pwsh -File /sast/psscriptanalyzer.ps1 -ScanPath "$PWD" -OutFile "psscriptanalyzer.sarif" || true
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@eaec7bdd3f18a9ef62b9f0d85d410932cf58c886 # v3.38.2
+        uses: github/codeql-action/upload-sarif@88585263c0627ee42c0e1c5143a112c8d6f4aa18 # v4.38.2
         with:
           sarif_file: ${{ inputs.working-directory }}/psscriptanalyzer.sarif
