@@ -27,6 +27,10 @@ jobs:
         with:
           toolchain: ${{ inputs.rust-version }}
           components: clippy
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
       - name: Clippy
         continue-on-error: ${{ github.base_ref != 'develop' && github.base_ref != 'main' && github.base_ref != 'master' && github.ref_name != 'develop' && github.ref_name != 'main' && github.ref_name != 'master' }}
         working-directory: ${{ inputs.working-directory }}
