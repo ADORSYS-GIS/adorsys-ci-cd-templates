@@ -78,8 +78,8 @@ jobs:
 
 Configure `SONAR_HOST_URL` and `SONAR_TOKEN` as repository secrets. The shared
 workflow accepts optional `source-dirs`, `exclusions`, `test-dirs`,
-`coverage-report-paths`, `bug-severities`, `vulnerability-severities`, and
-`analysis-timeout` inputs.
+`coverage-report-paths`, `fail-types`, `fail-severities`, and `analysis-timeout`
+inputs.
 
 Like the GitLab job, the workflow follows these principles rather than delegating
 to the server-side quality gate:
@@ -90,7 +90,12 @@ to the server-side quality gate:
 - **No reliance on `sonar.qualitygate.wait`.** The scan runs with `wait=false`,
   then the analysis task is polled to completion (`analysis-timeout`, default
   300s, with retries on transient failures).
-- **Custom severity gate.** It queries unresolved `BUG` and `VULNERABILITY`
-  issues at `bug-severities` / `vulnerability-severities` (default
-  `BLOCKER,CRITICAL,MAJOR`) and fails the job if any exist, reporting a severity
-  breakdown.
+- **Two independent gate conditions** (SonarQube Standard Experience). The job
+  fails when either query returns any unresolved issue:
+  - any issue of type `fail-types` (default `BUG,VULNERABILITY`), regardless of
+    severity; and
+  - any issue of severity `fail-severities` (default `BLOCKER,CRITICAL,MAJOR`),
+    regardless of type (including code smells).
+
+  Security Hotspots are deprecated and now raised as vulnerabilities, so they are
+  covered by the type condition — no separate hotspot query is needed.

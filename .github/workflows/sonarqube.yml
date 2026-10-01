@@ -31,11 +31,11 @@ on:
         default: ""
         required: false
         type: string
-      bug-severities:
-        default: "BLOCKER,CRITICAL,MAJOR"
+      fail-types:
+        default: "BUG,VULNERABILITY"
         required: false
         type: string
-      vulnerability-severities:
+      fail-severities:
         default: "BLOCKER,CRITICAL,MAJOR"
         required: false
         type: string
@@ -98,8 +98,8 @@ jobs:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_BRANCH_NAME: ${{ steps.branch.outputs.name }}
-          SONAR_BUG_SEVERITIES: ${{ inputs.bug-severities }}
-          SONAR_VULNERABILITY_SEVERITIES: ${{ inputs.vulnerability-severities }}
+          SONAR_FAIL_TYPES: ${{ inputs.fail-types }}
+          SONAR_FAIL_SEVERITIES: ${{ inputs.fail-severities }}
           SONAR_ANALYSIS_TIMEOUT: ${{ inputs.analysis-timeout }}
         run: |
           set -eu
@@ -161,56 +161,38 @@ jobs:
 
           # Query the analysed branch so the gate covers the whole codebase, not just PR changes.
           issue_scope="branch=${SONAR_BRANCH_NAME}"
-          bug_severities="${SONAR_BUG_SEVERITIES:-BLOCKER,CRITICAL,MAJOR}"
-          vulnerability_severities="${SONAR_VULNERABILITY_SEVERITIES:-BLOCKER,CRITICAL,MAJOR}"
+          fail_types="${SONAR_FAIL_TYPES:-BUG,VULNERABILITY}"
+          fail_severities="${SONAR_FAIL_SEVERITIES:-BLOCKER,CRITICAL,MAJOR}"
+          type_label=$(printf '%s' "$fail_types" | tr 'A-Z,' 'a-z/')
+          severity_label=$(printf '%s' "$fail_severities" | tr 'A-Z,' 'a-z/')
 
-          # Lists only the severities that actually have unresolved issues, e.g. "blocker/major".
-          severity_breakdown() {
-            issue_type="$1"
-            severities_csv="$2"
-            breakdown_total=0
-            breakdown_found=""
-            old_ifs="$IFS"
-            IFS=','
-            set -- $severities_csv
-            IFS="$old_ifs"
-            for sev in "$@"; do
-              sev_body=$(sonar_api_get "${SONAR_HOST_URL}/api/issues/search?componentKeys=${project_key}&${issue_scope}&types=${issue_type}&severities=${sev}&resolved=false&ps=1")
-              sev_count=$(printf '%s' "$sev_body" | jq -r '.total')
-              if [ "$sev_count" -gt 0 ]; then
-                breakdown_total=$((breakdown_total + sev_count))
-                sev_lower=$(printf '%s' "$sev" | tr '[:upper:]' '[:lower:]')
-                if [ -z "$breakdown_found" ]; then
-                  breakdown_found="$sev_lower"
-                else
-                  breakdown_found="${breakdown_found}/${sev_lower}"
-                fi
-              fi
-            done
-            printf '%s|%s' "$breakdown_total" "$breakdown_found"
+          # Counts unresolved issues matching a single api/issues/search filter.
+          count_issues() {
+            body=$(sonar_api_get "${SONAR_HOST_URL}/api/issues/search?componentKeys=${project_key}&${issue_scope}&${1}&resolved=false&ps=1")
+            printf '%s' "$body" | jq -r '.total'
           }
 
-          bug_breakdown=$(severity_breakdown BUG "$bug_severities")
-          bug_count="${bug_breakdown%%|*}"
-          bug_found="${bug_breakdown#*|}"
-          vulnerability_breakdown=$(severity_breakdown VULNERABILITY "$vulnerability_severities")
-          vulnerability_count="${vulnerability_breakdown%%|*}"
-          vulnerability_found="${vulnerability_breakdown#*|}"
+          # Two independent gate conditions (Standard Experience): fail on any bug or
+          # vulnerability (any severity), and on any BLOCKER/CRITICAL/MAJOR issue (any
+          # type, including code smells). Former Security Hotspots now raise
+          # vulnerabilities, so they are covered by the type condition.
+          type_count=$(count_issues "types=${fail_types}")
+          severity_count=$(count_issues "severities=${fail_severities}")
 
-          if [ "$bug_count" -gt 0 ] || [ "$vulnerability_count" -gt 0 ]; then
+          if [ "$type_count" -gt 0 ] || [ "$severity_count" -gt 0 ]; then
             message=""
-            if [ "$bug_count" -gt 0 ]; then
-              message="${bug_count} unresolved ${bug_found} bug(s)"
+            if [ "$type_count" -gt 0 ]; then
+              message="${type_count} unresolved ${type_label} issue(s)"
             fi
-            if [ "$vulnerability_count" -gt 0 ]; then
-              vulnerability_message="${vulnerability_count} unresolved ${vulnerability_found} vulnerabilit(ies)"
+            if [ "$severity_count" -gt 0 ]; then
+              severity_message="${severity_count} unresolved ${severity_label} issue(s)"
               if [ -n "$message" ]; then
-                message="${message} and ${vulnerability_message}"
+                message="${message} and ${severity_message}"
               else
-                message="$vulnerability_message"
+                message="$severity_message"
               fi
             fi
             echo "ERROR: SonarQube found ${message}."
             exit 1
           fi
-          echo "SonarQube scan passed: no unresolved blocker/critical/major bugs or vulnerabilities."
+          echo "SonarQube scan passed: no unresolved bugs/vulnerabilities and no blocker/critical/major issues."
