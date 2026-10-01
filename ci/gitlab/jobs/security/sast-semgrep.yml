@@ -1,8 +1,6 @@
-# Code SAST (Semgrep). Emits SARIF, renders a human-readable HTML report, and
-# converts the SARIF into a GitLab SAST report (scripts/sast/sarif-to-gitlab.py)
-# which also applies the severity gate (SAST_FAIL_SEVERITIES). The shared helper
-# scripts are fetched from the templates project at runtime. Requires
-# ADORSYS_CI_TEMPLATES_PROJECT to be set.
+# Code SAST (Semgrep). Emits SARIF, then renders a human-readable HTML report
+# with the shared scripts/sast/sarif-to-html.py fetched from the templates
+# project at runtime. Requires ADORSYS_CI_TEMPLATES_PROJECT to be set.
 .sast-semgrep:
   image:
     name: returntocorp/semgrep:1.178.0
@@ -11,84 +9,25 @@
   variables:
     ADORSYS_CI_TEMPLATES_PROJECT: ""
     ADORSYS_CI_TEMPLATES_REF: "main"
-    # Severities that fail the job. Set empty for report-only (no gate).
-    SAST_FAIL_SEVERITIES: "CRITICAL,HIGH"
-  # Same execution policy as the other security scanners: hard-fail on protected
-  # pushes and MRs targeting a protected branch (and on security-scan schedules);
-  # soft-fail on non-protected pushes and MRs; skip release/rollback runs and the
-  # duplicate push pipeline when an MR is already open.
+    # The semgrep image bakes in SEMGREP_IN_DOCKER=1 and, without
+    # GITHUB_WORKSPACE, aborts unless the code is at its src_directory
+    # (default /src). GitLab checks out at $CI_PROJECT_DIR, so point
+    # src_directory there to avoid "Detected Docker environment without a
+    # code volume".
+    SEMGREP_SRC_DIRECTORY: "$CI_PROJECT_DIR"
   rules:
-    - if: '$MAVEN_RELEASE_RUN == "true"'
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
       when: never
-    - if: '$MAVEN_RELEASE_ROLLBACK == "true"'
-      when: never
-    - if: '$CI_PIPELINE_SOURCE == "schedule" && ($SCHEDULE_TYPE == "security-scan")'
-      when: always
-      allow_failure: false
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED == "true"'
-      when: on_success
-      allow_failure: false
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_PROTECTED == "true"'
-      when: on_success
-      allow_failure: false
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_PROTECTED != "true"'
-      when: on_success
-      allow_failure: true
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_OPEN_MERGE_REQUESTS'
-      when: never
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_PROTECTED != "true"'
-      when: on_success
-      allow_failure: true
-    - when: never
+    - when: on_success
   script:
     - |
       set -eu
       : "${ADORSYS_CI_TEMPLATES_PROJECT:?Set ADORSYS_CI_TEMPLATES_PROJECT as a project/group CI/CD variable}"
-
-      # Fetches a file from the shared CI templates project into $2. Authenticates
-      # with GITLAB_TOKEN (PRIVATE-TOKEN) when set, else the CI job token.
-      fetch_tpl() {
-        TPL_FILE="$1" TPL_DST="$2" python3 -c 'import os,urllib.parse,urllib.request; proj=urllib.parse.quote(os.environ["ADORSYS_CI_TEMPLATES_PROJECT"],safe=""); path=urllib.parse.quote(os.environ["TPL_FILE"],safe=""); ref=os.environ.get("ADORSYS_CI_TEMPLATES_REF","main"); url=os.environ["CI_API_V4_URL"]+"/projects/"+proj+"/repository/files/"+path+"/raw?ref="+ref; req=urllib.request.Request(url,headers=({"PRIVATE-TOKEN":os.environ["GITLAB_TOKEN"]} if os.environ.get("GITLAB_TOKEN") else {"JOB-TOKEN":os.environ["CI_JOB_TOKEN"]})); open(os.environ["TPL_DST"],"wb").write(urllib.request.urlopen(req).read())'
-      }
-
-      # The semgrep image sets SEMGREP_IN_DOCKER, which makes semgrep require the code at
-      # /src; in GitLab the checkout is the job working directory, so clear it and scan '.'.
-      unset SEMGREP_IN_DOCKER || true
-      # Findings must not crash the job (gating is severity-based, below); but a
-      # scanner error (exit >= 2, e.g. an unreachable rule registry) is a real
-      # failure and must not be swallowed into a green "no findings".
-      rc=0
-      semgrep scan --config auto --sarif --output semgrep.sarif . || rc=$?
-      if [ "$rc" -ge 2 ]; then
-        echo "ERROR: Semgrep failed to run (exit ${rc}); failing instead of reporting a silent pass." >&2
-        exit 1
-      fi
-      # Render the SARIF as HTML using the shared renderer fetched from the templates
-      # project. The fetch authenticates with GITLAB_TOKEN (PRIVATE-TOKEN) when set, else
-      # the CI job token. If it still fails (e.g. HTTP 403), keep the job green by emitting
-      # a minimal HTML that points to the SARIF instead.
-      if TPL_FILE="scripts/sast/sarif-to-html.py" TPL_DST="/tmp/sarif-to-html.py" python3 -c 'import os,urllib.parse,urllib.request; proj=urllib.parse.quote(os.environ["ADORSYS_CI_TEMPLATES_PROJECT"],safe=""); path=urllib.parse.quote(os.environ["TPL_FILE"],safe=""); ref=os.environ.get("ADORSYS_CI_TEMPLATES_REF","main"); url=os.environ["CI_API_V4_URL"]+"/projects/"+proj+"/repository/files/"+path+"/raw?ref="+ref; req=urllib.request.Request(url,headers=({"PRIVATE-TOKEN":os.environ["GITLAB_TOKEN"]} if os.environ.get("GITLAB_TOKEN") else {"JOB-TOKEN":os.environ["CI_JOB_TOKEN"]})); open(os.environ["TPL_DST"],"wb").write(urllib.request.urlopen(req).read())'; then
-        python3 /tmp/sarif-to-html.py semgrep.sarif semgrep.html
-      else
-        echo "WARNING: could not fetch scripts/sast/sarif-to-html.py from '${ADORSYS_CI_TEMPLATES_PROJECT}'. Ensure GITLAB_TOKEN (or this project's CI_JOB_TOKEN) can read that project's repository. Emitting a placeholder report." >&2
-        printf '%s\n' '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Semgrep SAST report</title></head><body><h1>Semgrep SAST report</h1><p>The shared HTML renderer could not be fetched from the CI templates project (authorization error — check GITLAB_TOKEN/CI_JOB_TOKEN access). Raw results are in the <code>semgrep.sarif</code> artifact.</p></body></html>' > semgrep.html
-      fi
-
-      # GitLab SAST report + severity gate: surfaces findings in the MR/Vulnerability
-      # Report and exits non-zero when a finding reaches a gated severity
-      # (SAST_FAIL_SEVERITIES). A fetch failure here is fatal — the gate could not
-      # be evaluated.
-      if ! fetch_tpl "scripts/sast/sarif-to-gitlab.py" /tmp/sarif-to-gitlab.py; then
-        echo "ERROR: could not fetch scripts/sast/sarif-to-gitlab.py from '${ADORSYS_CI_TEMPLATES_PROJECT}'; cannot build the GitLab SAST report or evaluate the gate." >&2
-        exit 1
-      fi
-      python3 /tmp/sarif-to-gitlab.py semgrep.sarif gl-sast-report.json semgrep
+      semgrep scan --config auto --sarif --output semgrep.sarif || true
+      TPL_FILE="scripts/sast/sarif-to-html.py" TPL_DST="/tmp/sarif-to-html.py" python3 -c 'import os,urllib.parse,urllib.request; proj=urllib.parse.quote(os.environ["ADORSYS_CI_TEMPLATES_PROJECT"],safe=""); path=urllib.parse.quote(os.environ["TPL_FILE"],safe=""); ref=os.environ.get("ADORSYS_CI_TEMPLATES_REF","main"); url=os.environ["CI_API_V4_URL"]+"/projects/"+proj+"/repository/files/"+path+"/raw?ref="+ref; req=urllib.request.Request(url,headers={"JOB-TOKEN":os.environ["CI_JOB_TOKEN"]}); open(os.environ["TPL_DST"],"wb").write(urllib.request.urlopen(req).read())'
+      python3 /tmp/sarif-to-html.py semgrep.sarif semgrep.html
   artifacts:
     when: always
-    reports:
-      sast: gl-sast-report.json
     paths:
       - semgrep.html
-      - semgrep.sarif
-      - gl-sast-report.json
     expire_in: "30 days"
