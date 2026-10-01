@@ -9,6 +9,12 @@
   variables:
     ADORSYS_CI_TEMPLATES_PROJECT: ""
     ADORSYS_CI_TEMPLATES_REF: "main"
+    # The semgrep image bakes in SEMGREP_IN_DOCKER=1 and, without
+    # GITHUB_WORKSPACE, aborts unless the code is at its src_directory
+    # (default /src). GitLab checks out at $CI_PROJECT_DIR, so point
+    # src_directory there to avoid "Detected Docker environment without a
+    # code volume".
+    SEMGREP_SRC_DIRECTORY: "$CI_PROJECT_DIR"
   rules:
     - if: '$CI_PIPELINE_SOURCE == "schedule"'
       when: never
