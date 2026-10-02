@@ -51,12 +51,22 @@
 
       # --soft-fail keeps exit 0 for findings (gating is severity-based, below), so
       # any non-zero exit means a genuine scanner error that must not be swallowed
-      # into a green "no findings".
+      # into a green "no findings". Write the SARIF to a file (not stdout) so
+      # Checkov's banner/log lines cannot corrupt the JSON.
+      rm -rf checkov_out && mkdir -p checkov_out
       rc=0
-      checkov --directory . --soft-fail --output sarif > checkov.sarif || rc=$?
+      checkov --directory . --soft-fail --output sarif --output-file-path checkov_out || rc=$?
       if [ "$rc" -ne 0 ]; then
         echo "ERROR: Checkov failed to run (exit ${rc}); failing instead of reporting a silent pass." >&2
         exit 1
+      fi
+      # Checkov writes checkov_out/results_sarif.sarif; normalise to checkov.sarif
+      # (empty-but-valid SARIF when there was nothing to scan).
+      checkov_sarif=$(ls checkov_out/*.sarif 2>/dev/null | head -n1 || true)
+      if [ -n "$checkov_sarif" ]; then
+        cp "$checkov_sarif" checkov.sarif
+      else
+        printf '%s\n' '{"version":"2.1.0","runs":[{"tool":{"driver":{"name":"Checkov"}},"results":[]}]}' > checkov.sarif
       fi
       # Render the SARIF as HTML using the shared renderer fetched from the templates
       # project. The fetch authenticates with GITLAB_TOKEN (PRIVATE-TOKEN) when set, else
