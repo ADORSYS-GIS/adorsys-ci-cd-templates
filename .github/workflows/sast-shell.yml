@@ -13,7 +13,7 @@ on:
 permissions:
   contents: read
   actions: read
-  security-events: write
+  checks: write
 
 jobs:
   scan:
@@ -29,7 +29,34 @@ jobs:
             docker run --rm -v "$PWD:$PWD" -w "$PWD" koalaman/shellcheck:v0.11.0 -f json $FILES > shellcheck.json || true
           fi
           python3 "$GITHUB_WORKSPACE/scripts/sast/shellcheck-sarif.py"
-      - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@88585263c0627ee42c0e1c5143a112c8d6f4aa18 # v4.38.2
+      - name: Setup reviewdog
+        uses: reviewdog/action-setup@d8edfce3dd5e1ec6978745e801f9c50b5ef80252 # v1.4.0
         with:
-          sarif_file: ${{ inputs.working-directory }}/shellcheck.sarif
+          reviewdog_version: v0.21.2
+      - name: Report findings (reviewdog)
+        if: ${{ !cancelled() }}
+        env:
+          REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SARIF="${{ inputs.working-directory }}/shellcheck.sarif"
+          if [ ! -f "$SARIF" ]; then
+            echo "::warning::No SARIF file at $SARIF; skipping reviewdog report."
+            exit 0
+          fi
+          # PR -> inline check annotations; push/other -> commit check annotations.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            REPORTER="github-pr-check"
+          else
+            REPORTER="github-check"
+          fi
+          # Fail on new High/Critical (SARIF severity "error") only on protected
+          # branches; advisory (fail-level=none) everywhere else.
+          if [ "${{ github.base_ref != 'develop' && github.base_ref != 'main' && github.base_ref != 'master' && github.ref_name != 'develop' && github.ref_name != 'main' && github.ref_name != 'master' }}" = "true" ]; then
+            FAIL_LEVEL="none"
+          else
+            FAIL_LEVEL="error"
+          fi
+          echo "::group::reviewdog ($REPORTER, fail-level=$FAIL_LEVEL)"
+          cat "$SARIF" | reviewdog -f=sarif -name="shellcheck" \
+            -reporter="$REPORTER" -filter-mode=added -fail-level="$FAIL_LEVEL"
+          echo "::endgroup::"

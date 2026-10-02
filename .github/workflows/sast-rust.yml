@@ -16,7 +16,7 @@ on:
 permissions:
   contents: read
   actions: read
-  security-events: write
+  checks: write
 
 jobs:
   clippy:

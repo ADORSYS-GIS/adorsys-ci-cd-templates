@@ -132,17 +132,25 @@ All GitHub SAST workflows accept `runner` and `working-directory` (repo-relative
 | `sast-powershell.yml`            | PSScriptAnalyzer         | none                       |
 | `sast-iac.yml`                   | Checkov (Terraform/Helm) | none                       |
 
-Each GitHub workflow uploads its SARIF results to **GitHub code scanning** via
-`github/codeql-action/upload-sarif`, so findings appear inline in the code and in the
-**Security** tab. The workflows request `security-events: write` permission for this.
-GitLab jobs publish the SARIF file as a build artifact.
+Each GitHub workflow pipes its SARIF results through
+[`reviewdog`](https://github.com/reviewdog/reviewdog) (`-f=sarif`), so findings on
+changed lines appear as **check annotations** on the PR (or on the commit for pushes to
+protected branches). This avoids the GitHub Advanced Security / code-scanning upload
+requirement (`github/codeql-action/upload-sarif` is **not** used, so no paid GHAS
+entitlement is needed on private repos). The workflows request `checks: write`
+permission for this. GitLab jobs publish the SARIF file as a build artifact.
 
 ## Gating
 
 Scans run with `continue-on-error` on feature branches (GitHub) and `allow_failure`
 advisory behavior on non-protected branches, so they do not block pull requests/merge
-requests, and fail on protected branches (`develop`, `main`, `master`). Scans are
-advisory for now; gating on severity is a follow-up.
+requests, and fail on protected branches (`develop`, `main`, `master`).
+
+On GitHub, reviewdog also enforces **severity gating**: on protected branches it runs
+with `-fail-level=error`, so the CI check fails if the scanner reports any new
+High/Critical finding (SARIF severity `error`); on feature branches it runs with
+`-fail-level=none` (advisory annotations only). A scanner crash is still reported as a
+step failure regardless of findings.
 
 ## Optional deeper analysis
 
