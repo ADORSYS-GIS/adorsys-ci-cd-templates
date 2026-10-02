@@ -126,12 +126,15 @@ All GitHub SAST workflows accept `runner` and `working-directory` (repo-relative
 | `sast-iac.yml`                   | Checkov (Terraform/Helm) | none                       |
 
 Each GitHub workflow pipes its SARIF results through
-[`reviewdog`](https://github.com/reviewdog/reviewdog) (`-f=sarif`), so findings on
-changed lines appear as **check annotations** on the PR (or on the commit for pushes to
-protected branches). This avoids the GitHub Advanced Security / code-scanning upload
-requirement (`github/codeql-action/upload-sarif` is **not** used, so no paid GHAS
-entitlement is needed on private repos). The workflows request `checks: write`
-permission for this. GitLab jobs publish the SARIF file as a build artifact.
+[`reviewdog`](https://github.com/reviewdog/reviewdog) (`-f=sarif`, `-filter-mode=file`),
+so findings in any file the PR touches appear as **check annotations** on the PR (or on
+the commit for pushes to protected branches). This includes pre-existing findings in a
+modified file, so they are surfaced (and can gate) the moment the file is touched rather
+than only when the exact line changes. This avoids the GitHub Advanced Security /
+code-scanning upload requirement (`github/codeql-action/upload-sarif` is **not** used, so
+no paid GHAS entitlement is needed on private repos). The workflows request
+`checks: write` permission for this. GitLab jobs publish the SARIF file as a build
+artifact.
 
 ## Gating
 
@@ -140,8 +143,9 @@ advisory behavior on non-protected branches, so they do not block pull requests/
 requests, and fail on protected branches (`develop`, `main`, `master`).
 
 On GitHub, reviewdog also enforces **severity gating**: on protected branches it runs
-with `-fail-level=error`, so the CI check fails if the scanner reports any new
-High/Critical finding (SARIF severity `error`); on feature branches it runs with
+with `-fail-level=error`, so the CI check fails if the scanner reports a High/Critical
+finding (SARIF severity `error`) in a file the PR touches, including pre-existing
+findings that surface when the file is modified; on feature branches it runs with
 `-fail-level=none` (advisory annotations only). A scanner crash is still reported as a
 step failure regardless of findings.
 
