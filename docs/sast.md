@@ -65,6 +65,13 @@ three extra things beyond emitting SARIF:
    with an empty result: the scanner's fatal exit codes are checked, and a
    missing/invalid SARIF makes the converter exit non-zero.
 
+The HTML and GitLab converters honor active SARIF suppressions. Results with
+an accepted suppression, or an omitted suppression status such as Semgrep's
+`nosemgrep` output, are excluded from displayed findings and severity counts.
+Rejected and under-review suppressions remain reportable and gated. Raw SARIF
+artifacts retain suppression metadata for audit. Run the converter regression
+tests with `python3 scripts/sast/test-sarif-reports.py -v`.
+
 Each of these jobs ships the **same execution policy as every other security
 scanner** (OWASP, Trivy, CycloneDX, Gitleaks): it **hard-fails** on protected
 pushes and merge requests targeting a protected branch (and on `security-scan`
