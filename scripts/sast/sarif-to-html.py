@@ -22,6 +22,8 @@ def load_rows(sarif):
             if lvl:
                 rule_level[rule.get("id")] = lvl
         for res in run.get("results", []) or []:
+            if any(suppression.get("status") in (None, "accepted") for suppression in res.get("suppressions") or []):
+                continue
             rule_id = res.get("ruleId", "")
             level = res.get("level") or rule_level.get(rule_id, "warning")
             message = (res.get("message", {}) or {}).get("text", "")

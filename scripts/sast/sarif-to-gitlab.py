@@ -123,6 +123,8 @@ def main(argv):
             rules[rule.get("id")] = rule
 
         for result in run.get("results") or []:
+            if any(suppression.get("status") in (None, "accepted") for suppression in result.get("suppressions") or []):
+                continue
             rule_id = result.get("ruleId") or result.get("rule", {}).get("id") or "unknown"
             rule = rules.get(rule_id, {})
             message = (result.get("message") or {}).get("text") or rule_id
