@@ -32,7 +32,9 @@ jobs:
         run: |
           python -m venv .sast-venv
           .sast-venv/bin/pip install bandit==1.9.4
-          .sast-venv/bin/bandit -r . -x .sast-venv -f json -o bandit.json
+          # Bandit exits non-zero when it finds issues; never hard-fail here,
+          # findings are gated by reviewdog below.
+          .sast-venv/bin/bandit -r . -x .sast-venv -f json -o bandit.json || true
           # Bandit has no SARIF output; convert its JSON to SARIF here.
           .sast-venv/bin/python - <<'EOF'
           import json
