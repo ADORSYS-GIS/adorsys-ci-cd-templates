@@ -24,10 +24,23 @@ jobs:
         continue-on-error: ${{ github.base_ref != 'develop' && github.base_ref != 'main' && github.base_ref != 'master' && github.ref_name != 'develop' && github.ref_name != 'main' && github.ref_name != 'master' }}
         working-directory: ${{ inputs.working-directory }}
         run: |
+          # Keep the analyzer script inline so the workflow is self-contained
+          # and does not depend on files copied into the consumer repository.
+          cat > psscriptanalyzer.ps1 <<'EOF'
+          param(
+              [Parameter(Mandatory = $true)][string]$ScanPath,
+              [Parameter(Mandatory = $true)][string]$OutFile
+          )
+          $ErrorActionPreference = 'Stop'
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module PSScriptAnalyzer, ConvertToSARIF -Scope CurrentUser -Force
+          $records = Invoke-ScriptAnalyzer -Path $ScanPath -Recurse -ErrorAction SilentlyContinue
+          $records | ConvertTo-SARIF -FilePath $OutFile
+          EOF
           docker run --rm -v "$PWD:$PWD" -w "$PWD" \
-            -v "$GITHUB_WORKSPACE/scripts/sast:/sast" \
+            -v "$PWD/psscriptanalyzer.ps1:/sast/psscriptanalyzer.ps1" \
             mcr.microsoft.com/powershell:7.6.6 \
-            pwsh -File /sast/psscriptanalyzer.ps1 -ScanPath "$PWD" -OutFile "psscriptanalyzer.sarif" || true
+            pwsh -File /sast/psscriptanalyzer.ps1 -ScanPath "$PWD" -OutFile "$PWD/psscriptanalyzer.sarif" || true
       - name: Setup reviewdog
         uses: reviewdog/action-setup@d8edfce3dd5e1ec6978745e801f9c50b5ef80252 # v1.4.0
         with:

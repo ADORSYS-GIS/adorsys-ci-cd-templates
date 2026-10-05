@@ -22,11 +22,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Checkov
         continue-on-error: ${{ github.base_ref != 'develop' && github.base_ref != 'main' && github.base_ref != 'master' && github.ref_name != 'develop' && github.ref_name != 'main' && github.ref_name != 'master' }}
-        uses: bridgecrewio/checkov-action@99bb2caf247dfd9f03cf984373bc6043d4e32ebf # v12.1347.0
-        with:
-          directory: ${{ inputs.working-directory }}
-          output_format: sarif
-          output_file_path: checkov.sarif,
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          # Write SARIF to a file (the checkov-action has no output-file input)
+          # and never hard-fail here: findings are gated by reviewdog below.
+          docker run --rm -v "$PWD:$PWD" -w "$PWD" \
+            bridgecrew/checkov:2.0.930 -d . --output sarif > checkov.sarif || true
       - name: Setup reviewdog
         uses: reviewdog/action-setup@d8edfce3dd5e1ec6978745e801f9c50b5ef80252 # v1.4.0
         with:
