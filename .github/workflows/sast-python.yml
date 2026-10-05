@@ -32,7 +32,41 @@ jobs:
         run: |
           python -m venv .sast-venv
           .sast-venv/bin/pip install bandit==1.9.4
-          .sast-venv/bin/bandit -r . -f sarif -o bandit.sarif
+          .sast-venv/bin/bandit -r . -x .sast-venv -f json -o bandit.json
+          # Bandit has no SARIF output; convert its JSON to SARIF here.
+          .sast-venv/bin/python - <<'EOF'
+          import json
+
+          severity_map = {"LOW": "note", "MEDIUM": "warning", "HIGH": "error"}
+
+          with open("bandit.json") as f:
+              data = json.load(f)
+
+          rules = {}
+          results = []
+          for r in data.get("results", []):
+              rule_id = r.get("test_id", "B000")
+              if rule_id not in rules:
+                  rules[rule_id] = {"id": rule_id, "name": rule_id, "shortDescription": {"text": r.get("test_name", rule_id)}}
+              results.append({
+                  "ruleId": rule_id,
+                  "level": severity_map.get(r.get("issue_severity", "MEDIUM"), "warning"),
+                  "message": {"text": r.get("issue_text", "")},
+                  "locations": [{"physicalLocation": {"artifactLocation": {"uri": r.get("filename", "")}, "region": {"startLine": r.get("line_number", 1)}}}],
+              })
+
+          sarif = {
+              "version": "2.1.0",
+              "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+              "runs": [{
+                  "tool": {"driver": {"name": "Bandit", "informationUri": "https://bandit.readthedocs.io/", "rules": list(rules.values())}},
+                  "results": results,
+              }],
+          }
+
+          with open("bandit.sarif", "w") as f:
+              json.dump(sarif, f, indent=2)
+          EOF
       - name: Setup reviewdog
         uses: reviewdog/action-setup@d8edfce3dd5e1ec6978745e801f9c50b5ef80252 # v1.4.0
         with:
