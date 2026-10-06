@@ -1,6 +1,68 @@
 # Java test job templates
 # Runs unit tests, integration tests, and javadoc generation
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Shared coverage gate (hidden anchor, not a job).
+#
+# After the reactor has produced per-module JaCoCo reports, this step reads every
+# module's jacoco.csv, prints the per-module and per-class coverage, lists every
+# module/class below COVERAGE_MINIMUM, and FAILS the job if any module is below.
+#
+# It is fully generic — no module names are hardcoded. To exclude a module from
+# the gate, skip JaCoCo for that module in the PROJECT build (for example add
+# <jacoco.skip>true</jacoco.skip> to that module's pom.xml) so it produces no
+# jacoco.csv; the template never needs to know about it.
+#
+# Required env: COVERAGE_MINIMUM (e.g. 0.80), COVERAGE_LABEL, COVERAGE_SUBDIR.
+# ─────────────────────────────────────────────────────────────────────────────
+.coverage-gate-step: &coverage-gate |
+  min="${COVERAGE_MINIMUM}"
+  label="${COVERAGE_LABEL}"
+  subdir="${COVERAGE_SUBDIR}"
+  if [ -z "$(find . -type f -path "*/target/site/${subdir}/jacoco.csv" | head -1)" ]; then
+    echo "Coverage summary (${label}): JaCoCo CSV report not found"
+    exit 0
+  fi
+  find . -type f -path "*/target/site/${subdir}/jacoco.csv" -exec cat {} + | awk -F, -v min="${min}" -v label="${label}" '
+    $1 == "GROUP" { next }
+    NF >= 5 {
+      m = $4 + 0; c = $5 + 0
+      gmiss[$1] += m; gcov[$1] += c
+      tmiss += m; tcov += c
+      inst = m + c
+      if (inst > 0) { ck = $1 "/" $2 "." $3; cmiss[ck] = m; ccov[ck] = c }
+    }
+    END {
+      threshold = min * 100
+      grand = tmiss + tcov
+      if (grand == 0) {
+        printf "Coverage summary (%s): no JaCoCo instruction counters found\n", label
+        exit 0
+      }
+      printf "Coverage summary (%s): %.2f%% (%d/%d instructions)\n", label, 100 * tcov / grand, tcov, grand
+      printf "Modules below the %s coverage minimum (%.2f%%):\n", label, threshold
+      for (g in gmiss) {
+        tot = gmiss[g] + gcov[g]
+        if (tot == 0) continue
+        ratio = 100 * gcov[g] / tot
+        if (ratio < threshold) { modules_below++; printf "  %6.2f%% %s (%d/%d instructions)\n", ratio, g, gcov[g], tot | "sort -n" }
+      }
+      close("sort -n")
+      if (modules_below == 0) print "  none"
+      printf "Total modules below the %s coverage minimum: %d\n", label, modules_below + 0
+      printf "Classes below the %s coverage minimum (%.2f%%):\n", label, threshold
+      for (k in cmiss) {
+        tot = cmiss[k] + ccov[k]
+        ratio = 100 * ccov[k] / tot
+        if (ratio < threshold) { classes_below++; printf "  %6.2f%% %s (%d/%d instructions)\n", ratio, k, ccov[k], tot | "sort -n" }
+      }
+      close("sort -n")
+      if (classes_below == 0) print "  none"
+      printf "Total classes below the %s coverage minimum: %d\n", label, classes_below + 0
+      if (modules_below > 0) exit 1
+    }
+  '
+
 .test-java-unit:
   image: "${JAVA_MAVEN_IMAGE}"
   stage: Test
@@ -8,6 +70,8 @@
     JAVA_TOOL_OPTIONS: "-Djavax.net.ssl.trustStorePassword=changeit -XX:MaxRAM=3G"
     MAVEN_REPO_PATH: ".m2/repository"
     MAVEN_OPTS: "-Dmaven.repo.local=${MAVEN_REPO_PATH}"
+    COVERAGE_LABEL: "unit"
+    COVERAGE_SUBDIR: "jacoco-unit"
   cache:
     key: "maven-cache-$CI_COMMIT_REF_SLUG"
     paths:
@@ -20,64 +84,16 @@
     - mvn -version
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
-    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dcoverage.minimum="${COVERAGE_MINIMUM}" -Djacoco.dataFile=target/jacoco-unit.exec -Djacoco.outputDirectory=target/site/jacoco-unit jacoco:prepare-agent test jacoco:report jacoco:check@jacoco-check -q
+    # Build + test the whole reactor and produce per-module JaCoCo reports (no gate here).
+    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Djacoco.dataFile=target/jacoco-unit.exec -Djacoco.outputDirectory=target/site/jacoco-unit jacoco:prepare-agent test jacoco:report -q
+    # Evaluate coverage for every module from the JaCoCo CSVs; fails if any module is below COVERAGE_MINIMUM.
+    - *coverage-gate
   artifacts:
     paths:
       - "**/target/surefire-reports/*"
       - "**/target/site/jacoco-unit/jacoco.xml"
     name: "${CI_PROJECT_NAME}-${CI_BUILD_REF_NAME#*v}-*"
     expire_in: "10 days"
-  after_script:
-    - |
-      report_count=$(find . -type f -path '*/target/site/jacoco-unit/jacoco.xml' -print | wc -l)
-      if [ "$report_count" -gt 0 ]; then
-        find . -type f -path '*/target/site/jacoco-unit/jacoco.xml' -exec cat {} + | awk '
-          /<counter type="INSTRUCTION"/ {
-            line = $0; sub(/.*missed="/, "", line); split(line, missed_value, "\"")
-            line = $0; sub(/.*covered="/, "", line); split(line, covered_value, "\"")
-            report_missed = missed_value[1]; report_covered = covered_value[1]
-          }
-          /<\/report>/ {
-            missed += report_missed; covered += report_covered
-            report_missed = 0; report_covered = 0
-          }
-          END {
-            total = missed + covered
-            if (total > 0) printf "Coverage summary (unit): %.2f%% (%d/%d instructions)\n", 100 * covered / total, covered, total
-            else print "Coverage summary (unit): no JaCoCo instruction counters found"
-          }
-        ' || true
-        # RS='>' splits the report into single tags, so this works whether or not JaCoCo pretty-prints the XML.
-        find . -type f -path '*/target/site/jacoco-unit/jacoco.xml' -exec cat {} + | awk -v RS='>' -v min="${COVERAGE_MINIMUM}" '
-          BEGIN { threshold = min * 100; printf "Files below the unit coverage minimum (%.2f%%):\n", threshold }
-          /<package[ \t]/ { if (match($0, /name="[^"]*"/)) pkg = substr($0, RSTART + 6, RLENGTH - 7) }
-          /<sourcefile[ \t]/ { if (match($0, /name="[^"]*"/)) src = substr($0, RSTART + 6, RLENGTH - 7) }
-          /<\/sourcefile/ { src = "" }
-          /<counter[ \t]/ {
-            if (src != "" && $0 ~ /type="INSTRUCTION"/) {
-              key = pkg "/" src
-              if (match($0, /missed="[0-9]+"/)) missed[key] += substr($0, RSTART + 8, RLENGTH - 9) + 0
-              if (match($0, /covered="[0-9]+"/)) covered[key] += substr($0, RSTART + 9, RLENGTH - 10) + 0
-            }
-          }
-          END {
-            for (key in missed) {
-              total = missed[key] + covered[key]
-              if (total == 0) continue
-              ratio = 100 * covered[key] / total
-              if (ratio < threshold) {
-                below++
-                printf "  %6.2f%% %s (%d/%d instructions)\n", ratio, key, covered[key], total | "sort -n"
-              }
-            }
-            close("sort -n")
-            if (below == 0) print "  none"
-            printf "Total files below the unit coverage minimum: %d\n", below + 0
-          }
-        ' || true
-      else
-        echo "Coverage summary (unit): JaCoCo XML report not found"
-      fi
 
 .test-java-integration:
   image: "${JAVA_MAVEN_IMAGE}"
@@ -94,6 +110,8 @@
     DOCKER_TLS_CERTDIR: ""
     DOCKER_API_VERSION: "1.44"
     TESTCONTAINERS_RYUK_DISABLED: "true"
+    COVERAGE_LABEL: "integration"
+    COVERAGE_SUBDIR: "jacoco-it"
   cache:
     key: "maven-cache-$CI_COMMIT_REF_SLUG"
     paths:
@@ -106,63 +124,15 @@
     - mvn -version
   script:
     - docker --host "$DOCKER_HOST" version || true
-    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dcoverage.minimum="${COVERAGE_MINIMUM}" -Djacoco.dataFile=target/jacoco-it.exec -Djacoco.outputDirectory=target/site/jacoco-it -Dsurefire.skip=true -DskipITs=false verify jacoco:report jacoco:check@jacoco-check --fail-at-end --errors
+    # Build + run integration tests across the reactor and produce per-module JaCoCo reports (no gate here).
+    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Djacoco.dataFile=target/jacoco-it.exec -Djacoco.outputDirectory=target/site/jacoco-it -Dsurefire.skip=true -DskipITs=false verify jacoco:report --fail-at-end --errors
+    # Evaluate coverage for every module from the JaCoCo CSVs; fails if any module is below COVERAGE_MINIMUM.
+    - *coverage-gate
   artifacts:
     paths:
       - "**/target/site/jacoco-it/jacoco.xml"
       - "**/target/failsafe-reports/*"
     expire_in: "1 day"
-  after_script:
-    - |
-      report_count=$(find . -type f -path '*/target/site/jacoco-it/jacoco.xml' -print | wc -l)
-      if [ "$report_count" -gt 0 ]; then
-        find . -type f -path '*/target/site/jacoco-it/jacoco.xml' -exec cat {} + | awk '
-          /<counter type="INSTRUCTION"/ {
-            line = $0; sub(/.*missed="/, "", line); split(line, missed_value, "\"")
-            line = $0; sub(/.*covered="/, "", line); split(line, covered_value, "\"")
-            report_missed = missed_value[1]; report_covered = covered_value[1]
-          }
-          /<\/report>/ {
-            missed += report_missed; covered += report_covered
-            report_missed = 0; report_covered = 0
-          }
-          END {
-            total = missed + covered
-            if (total > 0) printf "Coverage summary (IT): %.2f%% (%d/%d instructions)\n", 100 * covered / total, covered, total
-            else print "Coverage summary (IT): no JaCoCo instruction counters found"
-          }
-        ' || true
-        # RS='>' splits the report into single tags, so this works whether or not JaCoCo pretty-prints the XML.
-        find . -type f -path '*/target/site/jacoco-it/jacoco.xml' -exec cat {} + | awk -v RS='>' -v min="${COVERAGE_MINIMUM}" '
-          BEGIN { threshold = min * 100; printf "Files below the integration coverage minimum (%.2f%%):\n", threshold }
-          /<package[ \t]/ { if (match($0, /name="[^"]*"/)) pkg = substr($0, RSTART + 6, RLENGTH - 7) }
-          /<sourcefile[ \t]/ { if (match($0, /name="[^"]*"/)) src = substr($0, RSTART + 6, RLENGTH - 7) }
-          /<\/sourcefile/ { src = "" }
-          /<counter[ \t]/ {
-            if (src != "" && $0 ~ /type="INSTRUCTION"/) {
-              key = pkg "/" src
-              if (match($0, /missed="[0-9]+"/)) missed[key] += substr($0, RSTART + 8, RLENGTH - 9) + 0
-              if (match($0, /covered="[0-9]+"/)) covered[key] += substr($0, RSTART + 9, RLENGTH - 10) + 0
-            }
-          }
-          END {
-            for (key in missed) {
-              total = missed[key] + covered[key]
-              if (total == 0) continue
-              ratio = 100 * covered[key] / total
-              if (ratio < threshold) {
-                below++
-                printf "  %6.2f%% %s (%d/%d instructions)\n", ratio, key, covered[key], total | "sort -n"
-              }
-            }
-            close("sort -n")
-            if (below == 0) print "  none"
-            printf "Total files below the integration coverage minimum: %d\n", below + 0
-          }
-        ' || true
-      else
-        echo "Coverage summary (IT): JaCoCo XML report not found"
-      fi
 
 .test-javadoc:
   image: "${JAVA_MAVEN_IMAGE}"
@@ -214,7 +184,8 @@
     MAVEN_SETTINGS_PATH: "scripts/mvn-release-settings.xml"
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
-    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -Dcoverage.minimum="${COVERAGE_MINIMUM}" -Djacoco.dataFile=target/jacoco-unit.exec -Djacoco.outputDirectory=target/site/jacoco-unit jacoco:prepare-agent test jacoco:report jacoco:check@jacoco-check -q
+    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -Djacoco.dataFile=target/jacoco-unit.exec -Djacoco.outputDirectory=target/site/jacoco-unit jacoco:prepare-agent test jacoco:report -q
+    - *coverage-gate
 
 .test-java-integration-settings:
   extends: .test-java-integration
@@ -222,7 +193,8 @@
     MAVEN_SETTINGS_PATH: "scripts/mvn-release-settings.xml"
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
-    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -Dcoverage.minimum="${COVERAGE_MINIMUM}" -Djacoco.dataFile=target/jacoco-it.exec -Djacoco.outputDirectory=target/site/jacoco-it -Dsurefire.skip=true -DskipITs=false verify jacoco:report jacoco:check@jacoco-check --fail-at-end --errors
+    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -Djacoco.dataFile=target/jacoco-it.exec -Djacoco.outputDirectory=target/site/jacoco-it -Dsurefire.skip=true -DskipITs=false verify jacoco:report --fail-at-end --errors
+    - *coverage-gate
 
 # Javadoc variant using the 'package' goal with a Maven settings file.
 # For projects that cannot use the 'verify' goal or the javadoc Maven profile
