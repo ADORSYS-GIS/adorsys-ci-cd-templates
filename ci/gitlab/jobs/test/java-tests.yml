@@ -4,12 +4,11 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Shared coverage gate (hidden anchor, not a job).
 #
-# Used ONLY by the unit-test job. After the reactor has produced per-module
-# JaCoCo reports, this step reads every module's jacoco.csv, prints the
-# per-module and per-class coverage, lists every module/class below
-# COVERAGE_MINIMUM, and FAILS the job if any module is below. The integration-
-# test job does NOT use this gate — integration tests assert that wired-together
-# components behave correctly, not that decision logic is covered.
+# Used by BOTH the unit-test job and the integration-test job (with different
+# COVERAGE_GATE_MODE lenses — see below). After the reactor has produced
+# per-module JaCoCo reports, this step reads every module's jacoco.csv, prints
+# the per-module and per-class coverage, lists every module/class below
+# COVERAGE_MINIMUM, and FAILS the job if any in-scope module is below.
 #
 # It is fully generic — no module names are hardcoded. To exclude a module from
 # the gate, skip JaCoCo for that module in the PROJECT build (for example add
@@ -29,41 +28,62 @@
 #     hardcoded and an enum that DOES carry logic (e.g. a fromValue() lookup)
 #     stays gated. The purpose is to spend unit-test effort on code that can
 #     actually harbour bugs instead of inflating coverage with data classes.
+#   - "integration"      → gate only the INTEGRATION SURFACE: the classes whose
+#     correctness depends on other components being wired in (REST/web
+#     controllers, Feign/REST clients, JPA repositories, messaging
+#     listeners/producers, gateways, adapters, …). A class is in scope when its
+#     fully-qualified name matches IT_SURFACE_PATTERN (an overridable ERE of
+#     common integration-boundary suffixes — conventions, not project-specific
+#     names). Everything else (pure domain/business logic that unit tests own)
+#     is excluded and reported. On top of the below-minimum listing, this mode
+#     prints the integration-surface classes with ZERO integration-test coverage
+#     — i.e. the component boundaries that NEED an IT but have none yet.
 #
 # Required env: COVERAGE_MINIMUM (e.g. 0.80), COVERAGE_LABEL, COVERAGE_SUBDIR.
-# Optional env: COVERAGE_GATE_MODE (all | behavioral).
+# Optional env: COVERAGE_GATE_MODE (all | behavioral | integration),
+#   IT_SURFACE_PATTERN (integration mode only; overrides the default
+#   integration-boundary class-name regex).
 # ─────────────────────────────────────────────────────────────────────────────
 .coverage-gate-step: &coverage-gate |
   min="${COVERAGE_MINIMUM}"
   label="${COVERAGE_LABEL}"
   subdir="${COVERAGE_SUBDIR}"
+  # Default integration-boundary class-name regex (override with IT_SURFACE_PATTERN).
+  # Conventions, not project-specific names: the classes whose correctness depends
+  # on other components being wired in and therefore need an integration test.
+  surface="${IT_SURFACE_PATTERN:-(Controller|Resource|Endpoint|Repository|RepositoryImpl|Dao|DaoImpl|Client|FeignClient|Gateway|Adapter|Connector|Listener|Consumer|Producer|Publisher|Subscriber|Scheduler|Job|Filter|Interceptor)$}"
   if [ -z "$(find . -type f -path "*/target/site/${subdir}/jacoco.csv" | head -1)" ]; then
     echo "Coverage summary (${label}): JaCoCo CSV report not found"
     exit 0
   fi
-  find . -type f -path "*/target/site/${subdir}/jacoco.csv" -exec cat {} + | awk -F, -v min="${min}" -v label="${label}" -v mode="${COVERAGE_GATE_MODE}" '
+  find . -type f -path "*/target/site/${subdir}/jacoco.csv" -exec cat {} + | awk -F, -v min="${min}" -v label="${label}" -v mode="${COVERAGE_GATE_MODE}" -v surface="${surface}" '
     $1 == "GROUP" { next }
     NF >= 5 {
       m = $4 + 0; c = $5 + 0
       inst = m + c
-      behavioral = 1
+      in_scope = 1
       if (mode == "behavioral") {
         branches = ($6 + 0) + ($7 + 0)
         complexity = ($10 + 0) + ($11 + 0)
         methods = ($12 + 0) + ($13 + 0)
-        behavioral = (branches > 0 || complexity > methods) ? 1 : 0
+        in_scope = (branches > 0 || complexity > methods) ? 1 : 0
+      } else if (mode == "integration") {
+        in_scope = (($2 "." $3) ~ surface) ? 1 : 0
       }
-      if (mode == "behavioral" && !behavioral) { excluded_classes++; next }
+      if ((mode == "behavioral" || mode == "integration") && !in_scope) { excluded_classes++; next }
       gmiss[$1] += m; gcov[$1] += c
       tmiss += m; tcov += c
-      if (inst > 0) { ck = $1 "/" $2 "." $3; cmiss[ck] = m; ccov[ck] = c }
+      if (inst > 0) {
+        ck = $1 "/" $2 "." $3; cmiss[ck] = m; ccov[ck] = c
+        if (mode == "integration" && c == 0) { zero_it[ck] = 1; zero_count++ }
+      }
     }
     END {
       threshold = min * 100
       grand = tmiss + tcov
       if (grand == 0) {
-        if (mode == "behavioral" && excluded_classes > 0)
-          printf "Coverage summary (%s): no behavioral classes to gate (%d non-behavioral classes excluded)\n", label, excluded_classes
+        if ((mode == "behavioral" || mode == "integration") && excluded_classes > 0)
+          printf "Coverage summary (%s): no in-scope classes to gate (%d classes excluded)\n", label, excluded_classes
         else
           printf "Coverage summary (%s): no JaCoCo instruction counters found\n", label
         exit 0
@@ -71,6 +91,8 @@
       printf "Coverage summary (%s): %.2f%% (%d/%d instructions)\n", label, 100 * tcov / grand, tcov, grand
       if (mode == "behavioral")
         printf "  (gated over behavioral classes only; %d non-behavioral classes excluded: enums/DTOs/constants/pure data holders)\n", excluded_classes + 0
+      if (mode == "integration")
+        printf "  (gated over the integration surface only; %d non-integration classes excluded: pure domain/business logic owned by unit tests)\n", excluded_classes + 0
       printf "Modules below the %s coverage minimum (%.2f%%):\n", label, threshold
       for (g in gmiss) {
         tot = gmiss[g] + gcov[g]
@@ -90,6 +112,13 @@
       close("sort -n")
       if (classes_below == 0) print "  none"
       printf "Total classes below the %s coverage minimum: %d\n", label, classes_below + 0
+      if (mode == "integration") {
+        print "Integration-surface classes with NO integration-test coverage (missing IT tests):"
+        for (k in zero_it) { printf "  %s\n", k | "sort" }
+        close("sort")
+        if (zero_count + 0 == 0) print "  none"
+        printf "Total integration-surface classes without an integration test: %d\n", zero_count + 0
+      }
       if (modules_below > 0) exit 1
     }
   '
@@ -143,12 +172,17 @@
 #   - Prevent integration regressions: fail the pipeline when a change to one
 #     component breaks its interactions with others.
 #
-# This job runs the Maven Failsafe integration tests (*IT) via `verify` and the
-# job PASSES only when every integration test passes. It deliberately does NOT
-# apply the code-coverage / behavioural gate used by the unit-test job: coverage
-# of decision logic is a unit-test concern, whereas integration tests assert that
-# wired-together components behave correctly end to end. `--fail-at-end` lets the
-# reactor run every module's ITs so all integration regressions surface in one run.
+# This job runs the Maven Failsafe integration tests (*IT) via `verify`; the job
+# fails if any IT fails, so wired-together components must actually work end to
+# end. It then applies the coverage gate in INTEGRATION mode: unlike the unit
+# job it does NOT gate per-class decision logic — it gates only the integration
+# SURFACE (controllers, REST/Feign clients, repositories, messaging
+# listeners/producers, gateways, adapters, …) and additionally reports the
+# integration-surface classes with ZERO IT coverage, i.e. the component
+# boundaries that NEED an integration test but do not have one yet. Pure
+# domain/business logic owned by unit tests is excluded from the IT gate.
+# `--fail-at-end` lets the reactor run every module's ITs so all integration
+# regressions and coverage gaps surface in one run.
 # ─────────────────────────────────────────────────────────────────────────────
 .test-java-integration:
   image: "${JAVA_MAVEN_IMAGE}"
@@ -165,6 +199,11 @@
     DOCKER_TLS_CERTDIR: ""
     DOCKER_API_VERSION: "1.44"
     TESTCONTAINERS_RYUK_DISABLED: "true"
+    COVERAGE_LABEL: "integration"
+    COVERAGE_SUBDIR: "jacoco-it"
+    # Gate the integration surface (component boundaries), not decision logic, and
+    # report integration-surface classes that have no IT yet (see .coverage-gate-step).
+    COVERAGE_GATE_MODE: "integration"
   cache:
     key: "maven-cache-$CI_COMMIT_REF_SLUG"
     paths:
@@ -172,17 +211,21 @@
     policy: pull-push
   before_script:
     - 'test -n "${JAVA_MAVEN_IMAGE}" || (echo "JAVA_MAVEN_IMAGE must be set in project .gitlab-ci.yml variables" && exit 1)'
+    - ': "${COVERAGE_MINIMUM:?COVERAGE_MINIMUM must be configured as a CI/CD variable}"'
     - java -version
     - mvn -version
   script:
     - docker --host "$DOCKER_HOST" version || true
-    # Run the Failsafe integration tests (*IT) across the reactor. Unit tests are
-    # skipped (surefire.skip=true); `verify` fails the job if any IT fails, so the
-    # job's success criterion is "all component interactions pass", not coverage.
-    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dsurefire.skip=true -DskipITs=false verify --fail-at-end --errors
+    # Run the Failsafe integration tests (*IT) across the reactor and produce
+    # per-module JaCoCo IT reports. Unit tests are skipped (surefire.skip=true);
+    # `verify` fails the job if any IT fails.
+    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Djacoco.dataFile=target/jacoco-it.exec -Djacoco.outputDirectory=target/site/jacoco-it -Dsurefire.skip=true -DskipITs=false verify jacoco:report --fail-at-end --errors
+    # Gate the integration surface and list component boundaries missing an IT.
+    - *coverage-gate
   artifacts:
     when: always
     paths:
+      - "**/target/site/jacoco-it/jacoco.xml"
       - "**/target/failsafe-reports/*"
     reports:
       junit:
@@ -249,7 +292,8 @@
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
     - docker --host "$DOCKER_HOST" version || true
-    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -Dsurefire.skip=true -DskipITs=false verify --fail-at-end --errors
+    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -Djacoco.dataFile=target/jacoco-it.exec -Djacoco.outputDirectory=target/site/jacoco-it -Dsurefire.skip=true -DskipITs=false verify jacoco:report --fail-at-end --errors
+    - *coverage-gate
 
 # Javadoc variant using the 'package' goal with a Maven settings file.
 # For projects that cannot use the 'verify' goal or the javadoc Maven profile
