@@ -28,35 +28,72 @@
 #     hardcoded and an enum that DOES carry logic (e.g. a fromValue() lookup)
 #     stays gated. The purpose is to spend unit-test effort on code that can
 #     actually harbour bugs instead of inflating coverage with data classes.
-#   - "integration"      → gate only the INTEGRATION SURFACE: the classes whose
-#     correctness depends on other components being wired in (REST/web
-#     controllers, Feign/REST clients, JPA repositories, messaging
-#     listeners/producers, gateways, adapters, …). A class is in scope when its
-#     fully-qualified name matches IT_SURFACE_PATTERN (an overridable ERE of
-#     common integration-boundary suffixes — conventions, not project-specific
-#     names). Everything else (pure domain/business logic that unit tests own)
-#     is excluded and reported. On top of the below-minimum listing, this mode
-#     prints the integration-surface classes with ZERO integration-test coverage
-#     — i.e. the component boundaries that NEED an IT but have none yet.
+#   - "integration"      → gate only the INTEGRATION SURFACE: classes that
+#     actually integrate with another component, detected from the SOURCE and
+#     NOT from class-name conventions (so it is not limited to *Controller). Every
+#     .java under src/main whose body contains an integration marker is treated
+#     as integration surface:
+#       * web endpoints  — @RestController, @Controller, @RequestMapping,
+#         @GetMapping/@PostMapping/…, @ControllerAdvice
+#       * persistence    — @Repository, @Entity, @Table, JpaRepository,
+#         CrudRepository, JpaSpecificationExecutor, @Query, EntityManager,
+#         JdbcTemplate, DataSource
+#       * messaging/events — @KafkaListener, @JmsListener, @RabbitListener,
+#         @StreamListener, @EventListener, @MessageMapping
+#       * remote/HTTP clients — @FeignClient, RestTemplate, WebClient
+#       * transaction boundaries — @Transactional
+#       * scheduling / servlet filters — @Scheduled, Filter, OncePerRequestFilter
+#       * externalised configuration — @Configuration, @ConfigurationProperties
+#     Those markers are the overridable ERE IT_SURFACE_MARKERS. This directly
+#     reflects what an integration test is for — verifying component
+#     interactions, catching API/database/messaging/configuration/dependency
+#     problems, validating data flow across boundaries, and preventing
+#     integration regressions. Everything else (pure domain/business logic that
+#     unit tests own) is excluded and reported. On top of the below-minimum
+#     listing, this mode prints the integration-surface classes with ZERO
+#     integration-test coverage — i.e. the component boundaries that NEED an IT
+#     but have none yet.
 #
 # Required env: COVERAGE_MINIMUM (e.g. 0.80), COVERAGE_LABEL, COVERAGE_SUBDIR.
 # Optional env: COVERAGE_GATE_MODE (all | behavioral | integration),
-#   IT_SURFACE_PATTERN (integration mode only; overrides the default
-#   integration-boundary class-name regex).
+#   IT_SURFACE_MARKERS (integration mode only; overrides the default regex of
+#   source markers that classify a class as integration surface).
 # ─────────────────────────────────────────────────────────────────────────────
 .coverage-gate-step: &coverage-gate |
   min="${COVERAGE_MINIMUM}"
   label="${COVERAGE_LABEL}"
   subdir="${COVERAGE_SUBDIR}"
-  # Default integration-boundary class-name regex (override with IT_SURFACE_PATTERN).
-  # Conventions, not project-specific names: the classes whose correctness depends
-  # on other components being wired in and therefore need an integration test.
-  surface="${IT_SURFACE_PATTERN:-(Controller|Resource|Endpoint|Repository|RepositoryImpl|Dao|DaoImpl|Client|FeignClient|Gateway|Adapter|Connector|Listener|Consumer|Producer|Publisher|Subscriber|Scheduler|Job|Filter|Interceptor)$}"
+  # In integration mode, derive the integration surface from the SOURCE (not from
+  # class-name conventions): a class needs an integration test when its source
+  # shows it integrates with another component — a web endpoint, persistence,
+  # messaging/events, an HTTP client, a transaction boundary, a servlet filter or
+  # externalised configuration. IT_SURFACE_MARKERS is the overridable ERE of those
+  # markers; every .java under src/main that contains one is integration surface
+  # (matched against the JaCoCo report by fully-qualified class name).
+  surface_file=""
+  if [ "${COVERAGE_GATE_MODE}" = "integration" ]; then
+    markers="${IT_SURFACE_MARKERS:-@(Rest)?Controller|@(Controller|RestController)Advice|@RequestMapping|@(Get|Post|Put|Delete|Patch)Mapping|@FeignClient|@Repository|@Entity|@Table|JpaRepository|CrudRepository|PagingAndSortingRepository|JpaSpecificationExecutor|@Query|EntityManager|JdbcTemplate|DataSource|@Transactional|@KafkaListener|@JmsListener|@RabbitListener|@StreamListener|@EventListener|@MessageMapping|@Scheduled|RestTemplate|WebClient|@ConfigurationProperties|@EnableConfigurationProperties|@Configuration|implements Filter|OncePerRequestFilter}"
+    surface_file="$(mktemp)"
+    trap 'rm -f "$surface_file"' EXIT
+    find . -type f -path "*/src/main/java/*.java" -exec grep -lE "$markers" {} + 2>/dev/null \
+      | while IFS= read -r f; do
+          pkg=$(sed -nE 's/^[[:space:]]*package[[:space:]]+([A-Za-z0-9_.]+)[[:space:]]*;.*/\1/p' "$f" | head -1)
+          cls=$(basename "$f" .java)
+          if [ -n "$pkg" ]; then echo "$pkg.$cls"; else echo "$cls"; fi
+        done | sort -u > "$surface_file"
+    echo "Integration surface: $(wc -l < "$surface_file" | tr -d ' ') source classes carry an integration marker"
+  fi
   if [ -z "$(find . -type f -path "*/target/site/${subdir}/jacoco.csv" | head -1)" ]; then
     echo "Coverage summary (${label}): JaCoCo CSV report not found"
     exit 0
   fi
-  find . -type f -path "*/target/site/${subdir}/jacoco.csv" -exec cat {} + | awk -F, -v min="${min}" -v label="${label}" -v mode="${COVERAGE_GATE_MODE}" -v surface="${surface}" '
+  find . -type f -path "*/target/site/${subdir}/jacoco.csv" -exec cat {} + | awk -F, -v min="${min}" -v label="${label}" -v mode="${COVERAGE_GATE_MODE}" -v surface_file="${surface_file}" '
+    BEGIN {
+      if (mode == "integration" && surface_file != "") {
+        while ((getline line < surface_file) > 0) { if (line != "") surf[line] = 1 }
+        close(surface_file)
+      }
+    }
     $1 == "GROUP" { next }
     NF >= 5 {
       m = $4 + 0; c = $5 + 0
@@ -68,7 +105,16 @@
         methods = ($12 + 0) + ($13 + 0)
         in_scope = (branches > 0 || complexity > methods) ? 1 : 0
       } else if (mode == "integration") {
-        in_scope = (($2 "." $3) ~ surface) ? 1 : 0
+        in_scope = 0
+        probe = $2 "." $3
+        # match the class, walking up any nested-class segments (Outer.Inner,
+        # Outer$Inner) until the top-level class; stop at the package (lowercase).
+        while (probe != "") {
+          if (probe in surf) { in_scope = 1; break }
+          seg = probe; sub(/^.*[.$]/, "", seg)
+          if (seg ~ /^[A-Z]/ && probe ~ /[.$]/) { sub(/[.$][^.$]*$/, "", probe) }
+          else break
+        }
       }
       if ((mode == "behavioral" || mode == "integration") && !in_scope) { excluded_classes++; next }
       gmiss[$1] += m; gcov[$1] += c
