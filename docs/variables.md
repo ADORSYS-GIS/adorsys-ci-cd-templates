@@ -19,8 +19,9 @@ each consuming project sets its own value.
 | `SONAR_HOST_URL` / `SONAR_TOKEN` | SonarQube server + auth token | Group |
 | `SONAR_PROJECT_KEY` | SonarQube project key | Project |
 | `SONAR_JACOCO_REPORT_PATHS` | Path(s) to the JaCoCo XML coverage report passed to `sonar.coverage.jacoco.xmlReportPaths` (defaults to `$CI_PROJECT_DIR/**/target/site/jacoco-unit/jacoco.xml`) | Project (optional) |
-| `COVERAGE_MINIMUM` | Minimum unit-test and integration-test coverage ratio, between `0` and `1` | Group/Project |
-| `COVERAGE_GATE_MODE` | Which classes the coverage gate measures: `behavioral` (default for the unit-test job — only classes with real decision logic are gated; enums/DTOs/constants/pure data holders are auto-excluded) or `all` (every class counts, used by the integration-test job) | Project (optional) |
+| `COVERAGE_MINIMUM` | Minimum coverage ratio, between `0` and `1`. The unit-test job gates behavioural coverage against it; the integration-test job gates the integration surface against it | Group/Project |
+| `COVERAGE_GATE_MODE` | Which classes the coverage gate measures: `behavioral` (unit-test job default — only classes with real decision logic are gated; enums/DTOs/constants/pure data holders are auto-excluded), `integration` (integration-test job default — only the integration surface is gated and classes with no IT are reported), or `all` (every class counts) | Project (optional) |
+| `IT_SURFACE_PATTERN` | Integration-test job only. ERE matched against each class's fully-qualified name to decide what counts as the integration surface. Defaults to common integration-boundary suffixes (`Controller`, `Repository`, `Client`, `Gateway`, `Listener`, `Producer`, `Adapter`, …). Override to fit a project's naming conventions | Project (optional) |
 | `DOCKER_REGISTRY` | Docker registry host (we only push to our own registry, no Docker Hub) | Group |
 | `DOCKER_REGISTRY_USER` / `DOCKER_REGISTRY_PASSWORD` | Docker registry login for Docker lint and package jobs | Group |
 | `DOCKERHUB_NAMESPACE` | Docker image namespace | Project |
