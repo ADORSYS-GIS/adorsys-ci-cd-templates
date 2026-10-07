@@ -44,7 +44,11 @@
 #       * transaction boundaries — @Transactional
 #       * scheduling / servlet filters — @Scheduled, Filter, OncePerRequestFilter
 #       * externalised configuration — @Configuration, @ConfigurationProperties
-#     Those markers are the overridable ERE IT_SURFACE_MARKERS. This directly
+#       * application orchestration — @Service classes that depend on an SPI,
+#         remote client, repository/DAO, gateway/connector, or event/messaging boundary
+#     Direct markers are controlled by IT_SURFACE_MARKERS. @Service beans also
+#     qualify when their source references an integration boundary dependency
+#     matched by IT_SERVICE_BOUNDARY_MARKERS. This directly
 #     reflects what an integration test is for — verifying component
 #     interactions, catching API/database/messaging/configuration/dependency
 #     problems, validating data flow across boundaries, and preventing
@@ -57,7 +61,8 @@
 # Required env: COVERAGE_MINIMUM (e.g. 0.80), COVERAGE_LABEL, COVERAGE_SUBDIR.
 # Optional env: COVERAGE_GATE_MODE (all | behavioral | integration),
 #   IT_SURFACE_MARKERS (integration mode only; overrides the default regex of
-#   source markers that classify a class as integration surface).
+#   direct source markers), IT_SERVICE_BOUNDARY_MARKERS (integration mode only;
+#   overrides dependency markers for @Service orchestration classes).
 # ─────────────────────────────────────────────────────────────────────────────
 .coverage-gate-step: &coverage-gate |
   min="${COVERAGE_MINIMUM}"
@@ -67,21 +72,30 @@
   # class-name conventions): a class needs an integration test when its source
   # shows it integrates with another component — a web endpoint, persistence,
   # messaging/events, an HTTP client, a transaction boundary, a servlet filter or
-  # externalised configuration. IT_SURFACE_MARKERS is the overridable ERE of those
-  # markers; every .java under src/main that contains one is integration surface
-  # (matched against the JaCoCo report by fully-qualified class name).
+  # externalised configuration. @Service classes are additionally included when
+  # they reference a dependency matching IT_SERVICE_BOUNDARY_MARKERS. Source files
+  # are matched against the JaCoCo report by fully-qualified class name.
   surface_file=""
   if [ "${COVERAGE_GATE_MODE}" = "integration" ]; then
     markers="${IT_SURFACE_MARKERS:-@(Rest)?Controller|@(Controller|RestController)Advice|@RequestMapping|@(Get|Post|Put|Delete|Patch)Mapping|@FeignClient|@Repository|@Entity|@Table|JpaRepository|CrudRepository|PagingAndSortingRepository|JpaSpecificationExecutor|@Query|EntityManager|JdbcTemplate|DataSource|@Transactional|@KafkaListener|@JmsListener|@RabbitListener|@StreamListener|@EventListener|@MessageMapping|@Scheduled|RestTemplate|WebClient|@ConfigurationProperties|@EnableConfigurationProperties|@Configuration|implements Filter|OncePerRequestFilter}"
+    service_boundary_markers="${IT_SERVICE_BOUNDARY_MARKERS:-Spi|Remote|Client|Repository|Dao|Gateway|Connector|Publisher|Producer|Consumer|Subscriber|EventService|Kafka|Jms|Rabbit|JdbcTemplate|DataSource|EntityManager}"
     surface_file="$(mktemp)"
     trap 'rm -f "$surface_file"' EXIT
-    find . -type f -path "*/src/main/java/*.java" -exec grep -lE "$markers" {} + 2>/dev/null \
+    {
+      find . -type f -path "*/src/main/java/*.java" -exec grep -lE "$markers" {} + 2>/dev/null
+      find . -type f -path "*/src/main/java/*.java" -exec grep -lE '@Service' {} + 2>/dev/null \
+        | while IFS= read -r f; do
+            if grep -qE "$service_boundary_markers" "$f"; then
+              printf '%s\n' "$f"
+            fi
+          done
+    } \
       | while IFS= read -r f; do
           pkg=$(sed -nE 's/^[[:space:]]*package[[:space:]]+([A-Za-z0-9_.]+)[[:space:]]*;.*/\1/p' "$f" | head -1)
           cls=$(basename "$f" .java)
           if [ -n "$pkg" ]; then echo "$pkg.$cls"; else echo "$cls"; fi
         done | sort -u > "$surface_file"
-    echo "Integration surface: $(wc -l < "$surface_file" | tr -d ' ') source classes carry an integration marker"
+    echo "Integration surface: $(wc -l < "$surface_file" | tr -d ' ') source classes carry an integration marker or boundary dependency"
   fi
   if [ -z "$(find . -type f -path "*/target/site/${subdir}/jacoco.csv" | head -1)" ]; then
     echo "Coverage summary (${label}): JaCoCo CSV report not found"
@@ -262,10 +276,11 @@
     - mvn -version
   script:
     - docker --host "$DOCKER_HOST" version || true
-    # Run the Failsafe integration tests (*IT) across the reactor and produce
-    # per-module JaCoCo IT reports. Unit tests are skipped (surefire.skip=true);
-    # `verify` fails the job if any IT fails.
-    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Djacoco.dataFile=target/jacoco-it.exec -Djacoco.outputDirectory=target/site/jacoco-it -Dsurefire.skip=true -DskipITs=false verify jacoco:report --fail-at-end --errors
+    # Run Failsafe integration tests (*IT) across the reactor and produce
+    # per-module JaCoCo IT reports. The project binds skip.unit.tests only to
+    # Surefire, so unit tests cannot contaminate the Failsafe coverage report.
+    # `clean` also prevents stale JaCoCo data from a previous run being appended.
+    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Djacoco.dataFile=target/jacoco-it.exec -Djacoco.outputDirectory=target/site/jacoco-it -Dskip.unit.tests=true -DskipITs=false clean verify jacoco:report --fail-at-end --errors
     # Gate the integration surface and list component boundaries missing an IT.
     - *coverage-gate
   artifacts:
