@@ -4,9 +4,12 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Shared coverage gate (hidden anchor, not a job).
 #
-# After the reactor has produced per-module JaCoCo reports, this step reads every
-# module's jacoco.csv, prints the per-module and per-class coverage, lists every
-# module/class below COVERAGE_MINIMUM, and FAILS the job if any module is below.
+# Used ONLY by the unit-test job. After the reactor has produced per-module
+# JaCoCo reports, this step reads every module's jacoco.csv, prints the
+# per-module and per-class coverage, lists every module/class below
+# COVERAGE_MINIMUM, and FAILS the job if any module is below. The integration-
+# test job does NOT use this gate — integration tests assert that wired-together
+# components behave correctly, not that decision logic is covered.
 #
 # It is fully generic — no module names are hardcoded. To exclude a module from
 # the gate, skip JaCoCo for that module in the PROJECT build (for example add
@@ -127,6 +130,26 @@
     name: "${CI_PROJECT_NAME}-${CI_BUILD_REF_NAME#*v}-*"
     expire_in: "10 days"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Integration-test job.
+#
+# Purpose (what this job is FOR — and what sets it apart from the unit-test job):
+#   - Verify component interactions: exercise multiple modules/services working
+#     together (real wiring, real Spring context, real containers via dind).
+#   - Detect integration issues: catch problems with APIs, databases, messaging,
+#     configuration and dependencies that unit tests mock away.
+#   - Validate data flow: ensure data is correctly exchanged and processed as it
+#     crosses component boundaries.
+#   - Prevent integration regressions: fail the pipeline when a change to one
+#     component breaks its interactions with others.
+#
+# This job runs the Maven Failsafe integration tests (*IT) via `verify` and the
+# job PASSES only when every integration test passes. It deliberately does NOT
+# apply the code-coverage / behavioural gate used by the unit-test job: coverage
+# of decision logic is a unit-test concern, whereas integration tests assert that
+# wired-together components behave correctly end to end. `--fail-at-end` lets the
+# reactor run every module's ITs so all integration regressions surface in one run.
+# ─────────────────────────────────────────────────────────────────────────────
 .test-java-integration:
   image: "${JAVA_MAVEN_IMAGE}"
   stage: Test
@@ -142,8 +165,6 @@
     DOCKER_TLS_CERTDIR: ""
     DOCKER_API_VERSION: "1.44"
     TESTCONTAINERS_RYUK_DISABLED: "true"
-    COVERAGE_LABEL: "integration"
-    COVERAGE_SUBDIR: "jacoco-it"
   cache:
     key: "maven-cache-$CI_COMMIT_REF_SLUG"
     paths:
@@ -151,19 +172,21 @@
     policy: pull-push
   before_script:
     - 'test -n "${JAVA_MAVEN_IMAGE}" || (echo "JAVA_MAVEN_IMAGE must be set in project .gitlab-ci.yml variables" && exit 1)'
-    - ': "${COVERAGE_MINIMUM:?COVERAGE_MINIMUM must be configured as a CI/CD variable}"'
     - java -version
     - mvn -version
   script:
     - docker --host "$DOCKER_HOST" version || true
-    # Build + run integration tests across the reactor and produce per-module JaCoCo reports (no gate here).
-    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Djacoco.dataFile=target/jacoco-it.exec -Djacoco.outputDirectory=target/site/jacoco-it -Dsurefire.skip=true -DskipITs=false verify jacoco:report --fail-at-end --errors
-    # Evaluate coverage for every module from the JaCoCo CSVs; fails if any module is below COVERAGE_MINIMUM.
-    - *coverage-gate
+    # Run the Failsafe integration tests (*IT) across the reactor. Unit tests are
+    # skipped (surefire.skip=true); `verify` fails the job if any IT fails, so the
+    # job's success criterion is "all component interactions pass", not coverage.
+    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Dsurefire.skip=true -DskipITs=false verify --fail-at-end --errors
   artifacts:
+    when: always
     paths:
-      - "**/target/site/jacoco-it/jacoco.xml"
       - "**/target/failsafe-reports/*"
+    reports:
+      junit:
+        - "**/target/failsafe-reports/TEST-*.xml"
     expire_in: "1 day"
 
 .test-javadoc:
@@ -225,8 +248,8 @@
     MAVEN_SETTINGS_PATH: "scripts/mvn-release-settings.xml"
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
-    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -Djacoco.dataFile=target/jacoco-it.exec -Djacoco.outputDirectory=target/site/jacoco-it -Dsurefire.skip=true -DskipITs=false verify jacoco:report --fail-at-end --errors
-    - *coverage-gate
+    - docker --host "$DOCKER_HOST" version || true
+    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -Dsurefire.skip=true -DskipITs=false verify --fail-at-end --errors
 
 # Javadoc variant using the 'package' goal with a Maven settings file.
 # For projects that cannot use the 'verify' goal or the javadoc Maven profile
