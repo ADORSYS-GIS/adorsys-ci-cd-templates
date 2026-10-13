@@ -30,13 +30,19 @@ jobs:
         continue-on-error: ${{ github.base_ref != 'develop' && github.base_ref != 'main' && github.base_ref != 'master' && github.ref_name != 'develop' && github.ref_name != 'main' && github.ref_name != 'master' }}
         working-directory: ${{ inputs.working-directory }}
         run: |
-          python -m venv .sast-venv
-          .sast-venv/bin/pip install bandit==1.9.4
+          # Create the venv OUTSIDE the scan root so `bandit -r .` never scans
+          # it. A venv inside the repo would be picked up by the recursive scan
+          # and produce thousands of false positives from Bandit/pip/setuptools
+          # dependencies. (The `-x .sast-venv` exclude below is kept as a
+          # belt-and-suspenders guard but does not match subdirectories.)
+          SAST_VENV="${RUNNER_TEMP:-/tmp}/sast-venv"
+          python -m venv "$SAST_VENV"
+          "$SAST_VENV/bin/pip" install bandit==1.9.4
           # Bandit exits non-zero when it finds issues; never hard-fail here,
           # findings are gated by reviewdog below.
-          .sast-venv/bin/bandit -r . -x .sast-venv -f json -o bandit.json || true
+          "$SAST_VENV/bin/bandit" -r . -x .sast-venv -f json -o bandit.json || true
           # Bandit has no SARIF output; convert its JSON to SARIF here.
-          .sast-venv/bin/python - <<'EOF'
+          "$SAST_VENV/bin/python" - <<'EOF'
           import json
 
           severity_map = {"LOW": "note", "MEDIUM": "warning", "HIGH": "error"}
