@@ -9,6 +9,13 @@ on:
       working-directory:
         required: true
         type: string
+      # Checkov baseline file (relative to working-directory). If present, it is
+      # passed via --baseline so accepted findings are suppressed while new ones
+      # are still gated. Defaults to .checkov.baseline.
+      checkov-baseline:
+        required: false
+        type: string
+        default: .checkov.baseline
 
 permissions:
   contents: read
@@ -27,8 +34,15 @@ jobs:
           # checkov writes a valid results.sarif into the working directory
           # with --output sarif; stdout carries only the banner. Never
           # hard-fail here, findings are gated by reviewdog below.
+          #
+          # Pass the baseline (if present) so accepted findings are suppressed
+          # while new ones are still gated. Unchanged without a baseline file.
+          BASELINE_ARGS=""
+          if [ -n "${{ inputs.checkov-baseline }}" ] && [ -f "${{ inputs.checkov-baseline }}" ]; then
+            BASELINE_ARGS="--baseline ${{ inputs.checkov-baseline }}"
+          fi
           docker run --rm -v "$PWD:$PWD" -w "$PWD" \
-            bridgecrew/checkov:2.0.930 -d . --output sarif > /dev/null || true
+            bridgecrew/checkov:2.0.930 -d . --output sarif $BASELINE_ARGS > /dev/null || true
       - name: Setup reviewdog
         uses: reviewdog/action-setup@d8edfce3dd5e1ec6978745e801f9c50b5ef80252 # v1.4.0
         with:
