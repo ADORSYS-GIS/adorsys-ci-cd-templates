@@ -31,6 +31,22 @@ on:
         default: ""
         required: false
         type: string
+      rust-coverage-report-paths:
+        default: ""
+        required: false
+        type: string
+      javascript-coverage-report-paths:
+        default: ""
+        required: false
+        type: string
+      generic-coverage-report-paths:
+        default: ""
+        required: false
+        type: string
+      extra-sonar-args:
+        default: ""
+        required: false
+        type: string
       fail-types:
         default: "BUG,VULNERABILITY"
         required: false
@@ -66,6 +82,7 @@ jobs:
           fetch-depth: 0
 
       - uses: actions/setup-python@v5
+        if: inputs.test-dirs != ''
         with:
           python-version: '3.12'
 
@@ -83,18 +100,44 @@ jobs:
         id: branch
         run: echo "name=${{ github.head_ref || github.ref_name }}" >> "$GITHUB_OUTPUT"
 
+      - name: Assemble SonarQube arguments
+        id: sonar-args
+        env:
+          PROJECT_KEY: ${{ inputs.project-key }}
+          SOURCES: ${{ inputs.source-dirs }}
+          EXCLUSIONS: ${{ inputs.exclusions }}
+          BRANCH_NAME: ${{ steps.branch.outputs.name }}
+          PYTHON_COVERAGE: ${{ inputs.coverage-report-paths }}
+          RUST_COVERAGE: ${{ inputs.rust-coverage-report-paths }}
+          JS_COVERAGE: ${{ inputs.javascript-coverage-report-paths }}
+          GENERIC_COVERAGE: ${{ inputs.generic-coverage-report-paths }}
+          EXTRA_ARGS: ${{ inputs.extra-sonar-args }}
+        run: |
+          args=(
+            "-Dsonar.projectKey=${PROJECT_KEY}"
+            "-Dsonar.sources=${SOURCES}"
+            "-Dsonar.exclusions=${EXCLUSIONS}"
+            "-Dsonar.branch.name=${BRANCH_NAME}"
+            "-Dsonar.qualitygate.wait=false"
+          )
+          [ -n "${PYTHON_COVERAGE}" ] && args+=("-Dsonar.python.coverage.reportPaths=${PYTHON_COVERAGE}")
+          [ -n "${RUST_COVERAGE}" ] && args+=("-Dsonar.rust.lcov.reportPaths=${RUST_COVERAGE}")
+          [ -n "${JS_COVERAGE}" ] && args+=("-Dsonar.javascript.lcov.reportPaths=${JS_COVERAGE}")
+          [ -n "${GENERIC_COVERAGE}" ] && args+=("-Dsonar.coverageReportPaths=${GENERIC_COVERAGE}")
+          if [ -n "${EXTRA_ARGS}" ]; then
+            while IFS= read -r line || [ -n "$line" ]; do
+              trimmed=$(echo "$line" | xargs)
+              [ -n "$trimmed" ] && args+=($trimmed)
+            done <<< "${EXTRA_ARGS}"
+          fi
+          echo "args=${args[*]}" >> "$GITHUB_OUTPUT"
+
       - uses: SonarSource/sonarqube-scan-action@v7
         env:
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
-          args: >
-            -Dsonar.projectKey=${{ inputs.project-key }}
-            -Dsonar.sources=${{ inputs.source-dirs }}
-            -Dsonar.exclusions=${{ inputs.exclusions }}
-            -Dsonar.python.coverage.reportPaths=${{ inputs.coverage-report-paths }}
-            -Dsonar.branch.name=${{ steps.branch.outputs.name }}
-            -Dsonar.qualitygate.wait=false
+          args: ${{ steps.sonar-args.outputs.args }}
 
       # Replaces qualitygate.wait: poll the task, then fail on unresolved severe issues.
       - name: SonarQube quality gate

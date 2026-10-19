@@ -10,7 +10,11 @@
     GIT_DEPTH: "0"
     SONAR_SOURCE_DIRS: "."
     SONAR_EXCLUSIONS: "**/node_modules/**,**/dist/**,**/build/**,**/coverage/**,**/target/**"
+    SONAR_PYTHON_COVERAGE_REPORT_PATHS: ""
+    SONAR_RUST_LCOV_REPORT_PATHS: ""
     SONAR_JAVASCRIPT_LCOV_REPORT_PATHS: ""
+    SONAR_COVERAGE_REPORT_PATHS: ""
+    SONAR_EXTRA_ARGS: ""
   cache:
     key: "sonar-cli-cache-$CI_COMMIT_REF_SLUG"
     paths:
@@ -33,7 +37,11 @@
         -Dsonar.projectKey="${SONAR_PROJECT_KEY}" \
         -Dsonar.sources="${SONAR_SOURCE_DIRS}" \
         -Dsonar.exclusions="${SONAR_EXCLUSIONS}" \
+        ${SONAR_PYTHON_COVERAGE_REPORT_PATHS:+-Dsonar.python.coverage.reportPaths="${SONAR_PYTHON_COVERAGE_REPORT_PATHS}"} \
+        ${SONAR_RUST_LCOV_REPORT_PATHS:+-Dsonar.rust.lcov.reportPaths="${SONAR_RUST_LCOV_REPORT_PATHS}"} \
         ${SONAR_JAVASCRIPT_LCOV_REPORT_PATHS:+-Dsonar.javascript.lcov.reportPaths="${SONAR_JAVASCRIPT_LCOV_REPORT_PATHS}"} \
+        ${SONAR_COVERAGE_REPORT_PATHS:+-Dsonar.coverageReportPaths="${SONAR_COVERAGE_REPORT_PATHS}"} \
+        ${SONAR_EXTRA_ARGS} \
         -Dsonar.qualitygate.wait=false
 
       # sonar-scanner-cli's image (Amazon Linux, non-root, no apt/apk) ships curl and

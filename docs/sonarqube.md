@@ -51,6 +51,13 @@ SonarQube:
     SONAR_JAVASCRIPT_LCOV_REPORT_PATHS: "coverage/lcov.info"
 ```
 
+Supported coverage variables in GitLab:
+- `SONAR_PYTHON_COVERAGE_REPORT_PATHS`: Path(s) to Python coverage XML (`-Dsonar.python.coverage.reportPaths`).
+- `SONAR_RUST_LCOV_REPORT_PATHS`: Path(s) to Rust LCOV reports (`-Dsonar.rust.lcov.reportPaths`).
+- `SONAR_JAVASCRIPT_LCOV_REPORT_PATHS`: Path(s) to JS/TS LCOV reports (`-Dsonar.javascript.lcov.reportPaths`).
+- `SONAR_COVERAGE_REPORT_PATHS`: Path(s) to generic coverage XML reports (`-Dsonar.coverageReportPaths`).
+- `SONAR_EXTRA_ARGS`: Additional SonarScanner flags.
+
 ## GitHub
 
 Add this caller workflow to `.github/workflows/sonarqube.yml`:
@@ -77,9 +84,17 @@ jobs:
 ```
 
 Configure `SONAR_HOST_URL` and `SONAR_TOKEN` as repository secrets. The shared
-workflow accepts optional `source-dirs`, `exclusions`, `test-dirs`,
-`coverage-report-paths`, `fail-types`, `fail-severities`, `compliance-filters`,
-and `analysis-timeout` inputs.
+workflow accepts the following optional inputs:
+
+- `source-dirs`: Source directories to analyze (default: `"."`).
+- `exclusions`: Comma-separated paths/patterns to exclude from analysis (default: `"**/node_modules/**,**/dist/**,**/build/**,**/coverage/**"`).
+- `test-dirs`: Comma-separated directories containing Python tests to run with `pytest --cov`. If omitted, Python setup and pytest execution are skipped.
+- `coverage-report-paths`: Path(s) to Python coverage XML reports (`-Dsonar.python.coverage.reportPaths`).
+- `rust-coverage-report-paths`: Path(s) to Rust LCOV reports (`-Dsonar.rust.lcov.reportPaths`).
+- `javascript-coverage-report-paths`: Path(s) to JS/TS LCOV reports (`-Dsonar.javascript.lcov.reportPaths`).
+- `generic-coverage-report-paths`: Path(s) to generic coverage XML reports (`-Dsonar.coverageReportPaths`).
+- `extra-sonar-args`: Additional command-line flags to pass to SonarScanner (e.g. `-Dsonar.coverage.exclusions=...`).
+- `fail-types`, `fail-severities`, `compliance-filters`, and `analysis-timeout`.
 
 Like the GitLab job, the workflow follows these principles rather than delegating
 to the server-side quality gate:
