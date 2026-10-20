@@ -47,15 +47,15 @@ jobs:
         run: |
           targets="[]"
           if [ "$SCAN_TYPE" = "fs" ] || [ "$SCAN_TYPE" = "all" ]; then
-            targets=$(printf '%s' "$targets" | jq -c '. + [{type:"fs", ref:"", platform:"", suffix:""}]')
+            targets=$(printf '%s' "$targets" | jq -c '. + [{target: {type:"fs", ref:"", platform:"", suffix:""}}]')
           fi
           if [ "$SCAN_TYPE" = "image" ] || [ "$SCAN_TYPE" = "all" ]; then
             if [ -z "$PLATFORMS" ]; then
-              targets=$(printf '%s' "$targets" | jq -c --arg r "$IMAGE_REF" '. + [{type:"image", ref:$r, platform:"", suffix:"image"}]')
+              targets=$(printf '%s' "$targets" | jq -c --arg r "$IMAGE_REF" '. + [{target: {type:"image", ref:$r, platform:"", suffix:"image"}}]')
             else
               for p in ${PLATFORMS//,/ }; do
                 suffix="image-$(printf '%s' "$p" | tr '/' '-')"
-                targets=$(printf '%s' "$targets" | jq -c --arg r "$IMAGE_REF" --arg p "$p" --arg s "$suffix" '. + [{type:"image", ref:$r, platform:$p, suffix:$s}]')
+                targets=$(printf '%s' "$targets" | jq -c --arg r "$IMAGE_REF" --arg p "$p" --arg s "$suffix" '. + [{target: {type:"image", ref:$r, platform:$p, suffix:$s}}]')
               done
             fi
           fi
