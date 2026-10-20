@@ -17,28 +17,82 @@ on:
         required: false
         type: string
         default: ""
+      platforms:
+        required: false
+        type: string
+        default: ""
+      artifact-name:
+        required: false
+        type: string
+        default: sbom
+      retention-days:
+        required: false
+        type: string
+        default: "7"
 
 permissions:
   contents: read
 
 jobs:
-  generate:
+  prepare:
     runs-on: ${{ inputs.runner }}
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - id: set
+        env:
+          SCAN_TYPE: ${{ inputs.scan-type }}
+          IMAGE_REF: ${{ inputs.image-ref }}
+          PLATFORMS: ${{ inputs.platforms }}
+        run: |
+          targets="[]"
+          if [ "$SCAN_TYPE" = "fs" ] || [ "$SCAN_TYPE" = "all" ]; then
+            targets=$(printf '%s' "$targets" | jq -c '. + [{type:"fs", ref:"", platform:"", suffix:""}]')
+          fi
+          if [ "$SCAN_TYPE" = "image" ] || [ "$SCAN_TYPE" = "all" ]; then
+            if [ -z "$PLATFORMS" ]; then
+              targets=$(printf '%s' "$targets" | jq -c --arg r "$IMAGE_REF" '. + [{type:"image", ref:$r, platform:"", suffix:"image"}]')
+            else
+              for p in ${PLATFORMS//,/ }; do
+                suffix="image-$(printf '%s' "$p" | tr '/' '-')"
+                targets=$(printf '%s' "$targets" | jq -c --arg r "$IMAGE_REF" --arg p "$p" --arg s "$suffix" '. + [{type:"image", ref:$r, platform:$p, suffix:$s}]')
+              done
+            fi
+          fi
+          echo "matrix=$targets" >> "$GITHUB_OUTPUT"
+
+  generate:
+    needs: prepare
+    runs-on: ${{ inputs.runner }}
+    strategy:
+      matrix:
+        include: ${{ fromJson(needs.prepare.outputs.matrix) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Generate CycloneDX SBOM
+        if: matrix.target.platform == ''
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
-          scan-type: ${{ inputs.scan-type }}
-          scan-ref: ${{ inputs.scan-type == 'fs' && inputs.working-directory || '' }}
-          image-ref: ${{ inputs.image-ref }}
+          scan-type: ${{ matrix.target.type }}
+          scan-ref: ${{ matrix.target.type == 'fs' && inputs.working-directory || '' }}
+          image-ref: ${{ matrix.target.type == 'image' && matrix.target.ref || '' }}
           format: cyclonedx
           output: sbom.json
+
+      - name: Setup Trivy CLI (per-platform image scan)
+        if: matrix.target.platform != ''
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+
+      - name: Generate CycloneDX SBOM (per-platform image scan)
+        if: matrix.target.platform != ''
+        run: |
+          trivy image --platform "${{ matrix.target.platform }}" \
+            --format cyclonedx --output sbom.json "${{ matrix.target.ref }}"
 
       - name: Upload SBOM artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: sbom
+          name: ${{ matrix.target.suffix != '' && format('{0}-{1}', inputs.artifact-name, matrix.target.suffix) || inputs.artifact-name }}
           path: sbom.json
-          retention-days: 7
+          retention-days: ${{ inputs.retention-days }}

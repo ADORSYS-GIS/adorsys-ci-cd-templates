@@ -47,12 +47,24 @@ jobs:
 The workflow checks out the repository, generates a CycloneDX SBOM with Trivy,
 and uploads it as the `sbom` artifact.
 
-| Input               | Required | Default | Purpose                                                   |
-| ------------------- | -------- | ------- | --------------------------------------------------------- |
-| `runner`            | yes      | -       | Runner label, for example `ubuntu-latest`                 |
-| `working-directory` | yes      | -       | Repository-relative path to scan                          |
-| `scan-type`         | no       | `fs`    | `fs` for a filesystem scan, `image` for a container image |
-| `image-ref`         | no       | empty   | Image reference, required when `scan-type` is `image`     |
+| Input               | Required | Default | Purpose                                                                          |
+| ------------------- | -------- | ------- | -------------------------------------------------------------------------------- |
+| `runner`            | yes      | -       | Runner label, for example `ubuntu-latest`                                        |
+| `working-directory` | yes      | -       | Repository-relative path to scan                                                 |
+| `scan-type`         | no       | `fs`    | `fs`, `image`, or `all` (fs plus image)                                          |
+| `image-ref`         | no       | empty   | Image reference, required when `scan-type` is `image` or `all`                   |
+| `platforms`         | no       | empty   | Comma-separated platforms for image scans, for example `linux/amd64,linux/arm64` |
+| `artifact-name`     | no       | `sbom`  | Base name of the uploaded artifact                                               |
+| `retention-days`    | no       | `7`     | Days to keep the uploaded artifact                                               |
+
+The workflow builds a scan matrix from these inputs. Every scan in the matrix
+uploads a distinct artifact, so a single caller job covers any combination of
+filesystem, image, and platform scans with no name collisions:
+
+- Filesystem scan: `artifact-name`, for example `sbom`
+- Image scan: `artifact-name-image`, for example `sbom-image`
+- Image scan for one platform: `artifact-name-image-{platform}`, for example
+  `sbom-image-linux-amd64`
 
 For a container image, point `scan-type` at `image` and pass the image
 reference:
@@ -73,6 +85,37 @@ jobs:
 The image must be reachable from the runner. Most projects use the default
 filesystem scan, which reads the committed lockfiles (`Cargo.lock`,
 `package-lock.json`, `poetry.lock`, `.terraform.lock.hcl`) plus anything else
-Trivy detects. Projects that build container images get an additional SBOM for
-the built image via the Docker BuildKit `sbom: true` option on the
-`docker/build-push-action` step.
+Trivy detects.
+
+To produce the filesystem SBOM and the image SBOMs in one job, use
+`scan-type: all` and pass one or more `platforms` when the image is built for
+several architectures:
+
+```yaml
+jobs:
+  sbom:
+    uses: ADORSYS-GIS/adorsys-ci-cd-templates/.github/workflows/sbom.yml@main
+    with:
+      runner: ubuntu-latest
+      working-directory: "."
+      scan-type: all
+      image-ref: ghcr.io/adorsys-gis/my-image:latest
+      platforms: linux/amd64,linux/arm64
+      artifact-name: sbom
+      retention-days: 7
+    permissions:
+      contents: read
+```
+
+This uploads `sbom` (filesystem), `sbom-image-linux-amd64`, and
+`sbom-image-linux-arm64` (image scans). Each platform scan runs
+`trivy image --platform` so the SBOM reflects the packages of that
+architecture.
+
+For images that are shipped as multi-platform manifests, the recommended
+source of the SBOM is the build itself: `docker/build-push-action` with
+`provenance: true` and `sbom: true` attaches a per-platform SBOM attestation
+to the image index. That is a single build step and requires no additional
+workflow on the caller side. The workflow above is the CI-artifact path, used
+when the SBOM must be downloadable from the workflow run, for example for
+import into DefectDojo.
