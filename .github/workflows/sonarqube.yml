@@ -27,6 +27,11 @@ on:
         default: ""
         required: false
         type: string
+      test-requirements:
+        description: "Path (relative to repo root) to a pip requirements file to install before running tests in test-dirs. Optional; e.g. tests/requirements-test.txt."
+        default: ""
+        required: false
+        type: string
       coverage-report-paths:
         default: ""
         required: false
@@ -103,8 +108,13 @@ jobs:
 
       - name: Run tests with coverage
         if: inputs.test-dirs != ''
+        env:
+          TEST_REQUIREMENTS: ${{ inputs.test-requirements }}
         run: |
           pip install pytest pytest-cov
+          if [ -n "${TEST_REQUIREMENTS}" ] && [ -f "${TEST_REQUIREMENTS}" ]; then
+            pip install -r "${TEST_REQUIREMENTS}"
+          fi
           IFS=',' read -ra DIRS <<< "${{ inputs.test-dirs }}"
           for dir in "${DIRS[@]}"; do
             (cd "$dir" && pytest --cov=. --cov-report=xml:coverage.xml)
