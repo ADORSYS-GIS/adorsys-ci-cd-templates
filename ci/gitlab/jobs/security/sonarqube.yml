@@ -301,7 +301,16 @@
       # Counts unresolved issues matching a single api/issues/search filter.
       count_issues() {
         body=$(sonar_api_get "${SONAR_HOST_URL}/api/issues/search?componentKeys=${project_key}&${issue_scope}&${1}&resolved=false&ps=1")
-        printf '%s' "$body" | jq -r '.total'
+        if ! count=$(printf '%s' "$body" | jq -er '
+          (if .paging.total == null then .total else .paging.total end) |
+          if type == "number" then
+            if . >= 0 and floor == . then . else error("Invalid issue count") end
+          else error("Missing or invalid issue count") end
+        '); then
+          echo "ERROR: SonarQube issue search returned no valid non-negative integer count." >&2
+          return 1
+        fi
+        printf '%s' "$count"
       }
 
       # Counts distinct unresolved issues mapped to a security standard that has no

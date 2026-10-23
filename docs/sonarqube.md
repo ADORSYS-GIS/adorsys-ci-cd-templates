@@ -123,6 +123,16 @@ to the server-side quality gate:
   Security Hotspots are deprecated and now raised as vulnerabilities, so they are
   covered by the type condition — no separate hotspot query is needed.
 
+The type and severity conditions are independent (OR, not AND): a MAJOR code
+smell fails the gate, as does a bug or vulnerability even at MINOR severity.
+Unresolved issues include both OPEN and CONFIRMED issues; the gate uses
+`resolved=false` and does not limit the query to new code.
+
+Issue counts are read from `paging.total` on current API responses, with support
+for the legacy top-level `total`. Missing or invalid counts fail the job
+explicitly rather than being treated as zero. The GitLab Maven/CLI gates and the
+GitHub workflow enforce the same count validation.
+
 Only security standards exposed by the `api/issues/search` Web API can be used in
 `compliance-filters` — for example `owaspTop10-2021`, `owaspTop10`, `cwe`, `casa`,
 `owaspAsvs-4.0`, `pciDss-4.0`, `pciDss-3.2`, `sonarsourceSecurity`, and
