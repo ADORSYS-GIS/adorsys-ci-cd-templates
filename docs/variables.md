@@ -19,7 +19,7 @@ each consuming project sets its own value.
 | `SONAR_HOST_URL` / `SONAR_TOKEN` | SonarQube server + auth token | Group |
 | `SONAR_PROJECT_KEY` | SonarQube project key | Project |
 | `SONAR_JACOCO_REPORT_PATHS` | Path(s) to the JaCoCo XML coverage report passed to `sonar.coverage.jacoco.xmlReportPaths` (defaults to `$CI_PROJECT_DIR/**/target/site/jacoco-unit/jacoco.xml`) | Project (optional) |
-| `COVERAGE_MINIMUM` | Minimum coverage ratio, between `0` and `1`. The unit-test job gates behavioural coverage against it; the integration-test job gates the integration surface against it | Group/Project |
+| `COVERAGE_MINIMUM` | Minimum coverage ratio, between `0` and `1`; defaults to `0.80` (80%) when unset or empty. The unit-test job gates behavioural coverage against it; the integration-test job gates the integration surface against it | Group/Project (optional) |
 | `COVERAGE_GATE_MODE` | Which classes the coverage gate measures: `behavioral` (unit-test job default — only classes with real decision logic are gated; enums/DTOs/constants/pure data holders are auto-excluded), `integration` (integration-test job default — only the integration surface is gated and classes with no IT are reported), or `all` (every class counts) | Project (optional) |
 | `IT_SURFACE_MARKERS` | Integration-test job only. ERE of source markers that classify a `.java` under `src/main` as integration surface (needs an IT). Defaults to web endpoints (`@RestController`, `@RequestMapping`, `@GetMapping`…), persistence (`@Repository`, `@Entity`, `JpaRepository`, `EntityManager`, `JdbcTemplate`…), messaging (`@KafkaListener`, `@JmsListener`, `@EventListener`…), HTTP clients (`@FeignClient`, `RestTemplate`, `WebClient`), transactions (`@Transactional`), servlet filters and configuration (`@Configuration`, `@ConfigurationProperties`). Override to fit a project's stack | Project (optional) |
 | `DOCKER_REGISTRY` | Docker registry host (we only push to our own registry, no Docker Hub) | Group |
@@ -29,6 +29,35 @@ each consuming project sets its own value.
 | `GITHUB_DEPLOY_KEY_BASE64` / `GITHUB_TOKEN` | Auth for github-sync push | Project |
 | `GITHUB_SSH_SERVER_FINGERPRINT` | github.com SSH host fingerprint | Group |
 | `GITHUB_USERNAME` / `GITHUB_EMAIL` | Commit identity for github-sync | Group |
+
+## Java coverage reports
+
+Coverage defaults to 80%; set `COVERAGE_MINIMUM` to override it. Explicit values,
+including `0`, are preserved.
+
+The Java unit and integration templates (including their settings variants) run
+`clean` before testing, write JaCoCo execution data to each module's
+`target/jacoco.exec`, and generate reports in `target/site/jacoco`. Both
+`jacoco.destFile` (agent output) and `jacoco.dataFile` (report input) are set to
+the same path. Consuming POMs must retain these standard paths or bind their
+`destFile`/`dataFile` configuration to the corresponding properties.
+
+The templates copy the generated reports to `target/site/jacoco-unit` or
+`target/site/jacoco-it` before evaluating coverage. These separate directories
+remain the artifact and SonarQube input paths. Report output is not redirected
+with `-Djacoco.outputDirectory`: JaCoCo's report goal has no such user property.
+Consuming POMs must generate XML and CSV reports in `target/site/jacoco`.
+Missing XML or CSV reports fail the job instead of silently bypassing the gate.
+Individual modules may still opt out with `jacoco.skip`, but a job with no
+reports fails.
+
+Integration jobs run `test-compile` followed by `failsafe:integration-test` and
+`failsafe:verify`, not the full `verify` lifecycle. This compiles main and test
+sources without invoking Surefire or plugins bound to later lifecycle phases,
+keeping unit-test execution and coverage out of the IT job. Plugins bound to
+phases through `test-compile` (including `validate`) still run. Projects requiring
+packaging or `pre-integration-test`/`post-integration-test` setup and teardown must
+explicitly add those steps in their project-specific IT job.
 
 ## Template-Specific Inputs
 
