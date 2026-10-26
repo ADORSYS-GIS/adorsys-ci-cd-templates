@@ -40,7 +40,11 @@ Test (Integration):
   extends: .test-java-integration
   tags:
     - aws
-  rules: !reference [.pipeline-always-except-schedules, rules]
+  # Opt out with JAVA_INTEGRATION_TESTS_ENABLED=false (e.g. projects without ITs).
+  rules:
+    - if: '$JAVA_INTEGRATION_TESTS_ENABLED == "false"'
+      when: never
+    - !reference [.pipeline-always-except-schedules, rules]
 
 .test-node-ui:
   image: node:${NODE_VERSION}-bookworm-slim

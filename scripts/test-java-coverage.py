@@ -27,9 +27,9 @@ def anchor_script(name):
 
 
 class JavaCoverageTest(unittest.TestCase):
-    def run_script(self, directory, anchor, subdir="jacoco-unit", mode="all"):
+    def run_script(self, directory, anchor, subdir="jacoco-unit", mode="all", shell=("sh", "-eu"), env=None):
         return subprocess.run(
-            ["sh", "-eu", "-c", anchor_script(anchor)],
+            [*shell, "-c", anchor_script(anchor)],
             cwd=directory,
             env={
                 **os.environ,
@@ -37,6 +37,7 @@ class JavaCoverageTest(unittest.TestCase):
                 "COVERAGE_SUBDIR": subdir,
                 "COVERAGE_MINIMUM": "0.80",
                 "COVERAGE_GATE_MODE": mode,
+                **(env or {}),
             },
             text=True,
             capture_output=True,
@@ -98,6 +99,58 @@ class JavaCoverageTest(unittest.TestCase):
                 self.assertEqual(self.run_script(directory, "publish-jacoco").returncode, 0)
                 result = self.run_script(directory, "coverage-gate", mode=mode)
                 self.assertEqual(result.returncode, expected, result.stderr)
+
+    # GitLab runs job scripts with bash `set -eo pipefail`.
+    GITLAB_SHELL = ("bash", "-eo", "pipefail")
+
+    def test_integration_gate_without_service_or_marker_classes_does_not_abort(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "module/src/main/java/example/Logic.java"
+            source.parent.mkdir(parents=True)
+            source.write_text("package example;\nclass Logic {}\n", encoding="utf-8")
+            self.write_report(directory, "module", "module,example,Logic,10,90,1,1,1,1,2,2,1,1\n")
+            self.assertEqual(
+                self.run_script(directory, "publish-jacoco", "jacoco-it", shell=self.GITLAB_SHELL).returncode, 0
+            )
+            result = self.run_script(
+                directory, "coverage-gate", "jacoco-it", mode="integration", shell=self.GITLAB_SHELL
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("Integration surface: 0 source classes", result.stdout)
+            self.assertIn("no in-scope classes to gate", result.stdout)
+
+    def test_integration_publish_without_its_skips_unless_required(self):
+        it_env = {"COVERAGE_TEST_REPORTS_DIR": "failsafe-reports"}
+        with tempfile.TemporaryDirectory() as directory:
+            result = self.run_script(
+                directory, "publish-jacoco", "jacoco-it", shell=self.GITLAB_SHELL, env=it_env
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("no tests ran", result.stdout)
+            result = self.run_script(
+                directory, "publish-jacoco", "jacoco-it", shell=self.GITLAB_SHELL,
+                env={**it_env, "INTEGRATION_TESTS_REQUIRED": "true"},
+            )
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn("INTEGRATION_TESTS_REQUIRED=true", result.stdout)
+            # ITs ran but JaCoCo produced no report: still a hard failure.
+            reports = Path(directory) / "module/target/failsafe-reports"
+            reports.mkdir(parents=True)
+            (reports / "TEST-example.LogicIT.xml").write_text("<testsuite/>", encoding="utf-8")
+            result = self.run_script(
+                directory, "publish-jacoco", "jacoco-it", shell=self.GITLAB_SHELL, env=it_env
+            )
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn("report not found", result.stdout)
+
+    def test_integration_job_declares_test_reports_dir_and_presets_allow_opt_out(self):
+        self.assertIn('COVERAGE_TEST_REPORTS_DIR: "failsafe-reports"', TEMPLATE)
+        presets = Path(__file__).resolve().parents[1] / "presets"
+        for preset in presets.glob("*.yml"):
+            text = preset.read_text(encoding="utf-8")
+            if "extends: .test-java-integration" in text:
+                with self.subTest(preset=preset.name):
+                    self.assertIn("""if: '$JAVA_INTEGRATION_TESTS_ENABLED == "false"'""", text)
 
     def test_every_maven_variant_uses_matching_paths_and_publishes_before_gating(self):
         commands = re.findall(r"^    - (mvn .*jacoco:report.*)$", TEMPLATE, re.MULTILINE)

@@ -3,8 +3,24 @@
 
 # JaCoCo report outputDirectory has no CLI user property. Use its standard
 # directory (also used by consuming POMs), then publish separate job reports.
+#
+# When COVERAGE_TEST_REPORTS_DIR is set (integration job: failsafe-reports) and no
+# test report exists there, no tests ran, so there is no coverage to gate. Unless
+# INTEGRATION_TESTS_REQUIRED is "true", the job then ends successfully here and
+# skips the gate. `exit 0` ends the whole job script, so this must stay the
+# second-to-last step, followed only by the coverage gate.
 .publish-jacoco-step: &publish-jacoco |
   if [ -z "$(find . -type f -path "*/target/site/jacoco/jacoco.xml" -print -quit)" ]; then
+    if [ -n "${COVERAGE_TEST_REPORTS_DIR:-}" ] \
+      && [ -z "$(find . -type f -path "*/target/${COVERAGE_TEST_REPORTS_DIR}/TEST-*.xml" -print -quit)" ]; then
+      if [ "${INTEGRATION_TESTS_REQUIRED:-false}" = "true" ]; then
+        echo "Coverage report (${COVERAGE_LABEL}): no tests ran (no target/${COVERAGE_TEST_REPORTS_DIR}/TEST-*.xml) and INTEGRATION_TESTS_REQUIRED=true"
+        exit 1
+      fi
+      echo "Coverage report (${COVERAGE_LABEL}): no tests ran (no target/${COVERAGE_TEST_REPORTS_DIR}/TEST-*.xml); skipping the ${COVERAGE_LABEL} coverage gate."
+      echo "Set INTEGRATION_TESTS_REQUIRED=true to fail instead, or JAVA_INTEGRATION_TESTS_ENABLED=false to remove this job."
+      exit 0
+    fi
     echo "Coverage report (${COVERAGE_LABEL}): JaCoCo XML report not found in target/site/jacoco"
     exit 1
   fi
@@ -97,14 +113,16 @@
     service_boundary_markers="${IT_SERVICE_BOUNDARY_MARKERS:-Spi|Remote|Client|Repository|Dao|Gateway|Connector|Publisher|Producer|Consumer|Subscriber|EventService|Kafka|Jms|Rabbit|JdbcTemplate|DataSource|EntityManager}"
     surface_file="$(mktemp)"
     trap 'rm -f "$surface_file"' EXIT
+    # grep exits 1 when a batch has no match (e.g. a repo without @Service); under
+    # GitLab's `set -eo pipefail` that would abort the job silently, hence `|| true`.
     {
-      find . -type f -path "*/src/main/java/*.java" -exec grep -lE "$markers" {} + 2>/dev/null
+      find . -type f -path "*/src/main/java/*.java" -exec grep -lE "$markers" {} + 2>/dev/null || true
       find . -type f -path "*/src/main/java/*.java" -exec grep -lE '@Service' {} + 2>/dev/null \
         | while IFS= read -r f; do
             if grep -qE "$service_boundary_markers" "$f"; then
               printf '%s\n' "$f"
             fi
-          done
+          done || true
     } \
       | while IFS= read -r f; do
           pkg=$(sed -nE 's/^[[:space:]]*package[[:space:]]+([A-Za-z0-9_.]+)[[:space:]]*;.*/\1/p' "$f" | head -1)
@@ -284,6 +302,9 @@
     # Gate the integration surface (component boundaries), not decision logic, and
     # report integration-surface classes that have no IT yet (see .coverage-gate-step).
     COVERAGE_GATE_MODE: "integration"
+    # No Failsafe TEST-*.xml means no ITs ran: skip the gate unless
+    # INTEGRATION_TESTS_REQUIRED=true (see .publish-jacoco-step).
+    COVERAGE_TEST_REPORTS_DIR: "failsafe-reports"
   cache:
     key: "maven-cache-$CI_COMMIT_REF_SLUG"
     paths:

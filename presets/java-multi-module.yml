@@ -91,7 +91,11 @@ Test (Unit):
 
 Test (Integration):
   extends: .test-java-integration
-  rules: !reference [.pipeline-always-except-schedules, rules]
+  # Opt out with JAVA_INTEGRATION_TESTS_ENABLED=false (e.g. projects without ITs).
+  rules:
+    - if: '$JAVA_INTEGRATION_TESTS_ENABLED == "false"'
+      when: never
+    - !reference [.pipeline-always-except-schedules, rules]
   needs:
     - job: "Build (Multi-Module)"
       artifacts: true
