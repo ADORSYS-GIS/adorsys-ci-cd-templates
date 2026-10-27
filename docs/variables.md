@@ -21,7 +21,11 @@ each consuming project sets its own value.
 | `SONAR_JACOCO_REPORT_PATHS` | Path(s) to the JaCoCo XML coverage report passed to `sonar.coverage.jacoco.xmlReportPaths` (defaults to `$CI_PROJECT_DIR/**/target/site/jacoco-unit/jacoco.xml`) | Project (optional) |
 | `COVERAGE_MINIMUM` | Minimum coverage ratio, between `0` and `1`; defaults to `0.80` (80%) when unset or empty. The unit-test job gates behavioural coverage against it; the integration-test job gates the integration surface against it | Group/Project (optional) |
 | `COVERAGE_GATE_MODE` | Which classes the coverage gate measures: `behavioral` (unit-test job default — only classes with real decision logic are gated; enums/DTOs/constants/pure data holders are auto-excluded), `integration` (integration-test job default — only the integration surface is gated and classes with no IT are reported), or `all` (every class counts) | Project (optional) |
-| `IT_SURFACE_MARKERS` | Integration-test job only. ERE of source markers that classify a `.java` under `src/main` as integration surface (needs an IT). Defaults to web endpoints (`@RestController`, `@RequestMapping`, `@GetMapping`…), persistence (`@Repository`, `@Entity`, `JpaRepository`, `EntityManager`, `JdbcTemplate`…), messaging (`@KafkaListener`, `@JmsListener`, `@EventListener`…), HTTP clients (`@FeignClient`, `RestTemplate`, `WebClient`), transactions (`@Transactional`), servlet filters and configuration (`@Configuration`, `@ConfigurationProperties`). Override to fit a project's stack | Project (optional) |
+| `IT_SURFACE_MARKERS` | Integration-test job only. ERE of source markers that classify a `.java` under `src/main` as integration surface (needs an IT). Defaults to web endpoints (`@RestController`, `@RequestMapping`, `@GetMapping`…), persistence (`@Repository`, `@Entity`, `JpaRepository`, `EntityManager`, `JdbcTemplate`…), messaging (`@KafkaListener`, `@JmsListener`, `@EventListener`…), HTTP clients (`@FeignClient`, `RestTemplate`, `WebClient`), transactions (`@Transactional`), servlet filters and configuration (`@Configuration`, `@ConfigurationProperties`). Override to fit a project's stack. Validated before the scan; an invalid regex fails the job | Project (optional) |
+| `IT_SERVICE_BOUNDARY_MARKERS` | Integration-test job only. ERE matched against `@Service` classes: a service whose source matches it (it depends on an SPI, remote client, repository/DAO, gateway/connector or messaging boundary) is also integration surface. Defaults to `Spi\|Remote\|Client\|Repository\|Dao\|Gateway\|Connector\|Publisher\|Producer\|Consumer\|Subscriber\|EventService\|Kafka\|Jms\|Rabbit\|JdbcTemplate\|DataSource\|EntityManager`. Validated before the scan; an invalid regex fails the job | Project (optional) |
+| `JAVA_INTEGRATION_TESTS_ENABLED` | Presets only (`java-backend`, `java-multi-module`, `full-stack-build`). Set to `false` to remove the `Test (Integration)` job from the pipeline; any other value or unset keeps it | Project (optional) |
+| `INTEGRATION_TESTS_REQUIRED` | Integration-test job only. Decides what happens when no integration tests ran (no Failsafe `target/failsafe-reports/TEST-*.xml`). `true`: the job fails. `false`: the coverage gate is skipped and the job ends with exit code `3`, shown as an allowed-failure warning. Unset (default): `true` if the repo has IT sources matching Failsafe's default includes (`IT*.java`, `*IT.java`, `*ITCase.java` under `src/test`), otherwise `false` | Project (optional) |
+| `COVERAGE_TEST_REPORTS_DIR` | Internal; set by the integration-test job to `failsafe-reports`. Directory under `target/` that must contain `TEST-*.xml` for the job to count tests as having run. Do not override | — |
 | `DOCKER_REGISTRY` | Docker registry host (we only push to our own registry, no Docker Hub) | Group |
 | `DOCKER_REGISTRY_USER` / `DOCKER_REGISTRY_PASSWORD` | Docker registry login for Docker lint and package jobs | Group |
 | `DOCKERHUB_NAMESPACE` | Docker image namespace | Project |
@@ -49,7 +53,36 @@ with `-Djacoco.outputDirectory`: JaCoCo's report goal has no such user property.
 Consuming POMs must generate XML and CSV reports in `target/site/jacoco`.
 Missing XML or CSV reports fail the job instead of silently bypassing the gate.
 Individual modules may still opt out with `jacoco.skip`, but a job with no
-reports fails.
+reports fails. The integration job treats one case differently: when no
+integration tests ran at all, see `INTEGRATION_TESTS_REQUIRED` and the migration
+note below.
+
+### Migration: integration-test job and projects without ITs
+
+The presets always include `Test (Integration)`, which gates JaCoCo coverage.
+What happens when Failsafe ran no tests (no `target/failsafe-reports/TEST-*.xml`):
+
+| Situation | Result |
+|---|---|
+| No IT sources in the repo (`IT*.java`, `*IT.java`, `*ITCase.java` under `src/test`) | Gate skipped. Job exits `3` and shows as a **warning** (allowed failure); the pipeline stays green |
+| IT sources exist, but none ran (renamed tests, custom includes, Failsafe only declared in `<pluginManagement>` or a profile the CLI goals don't activate) | Job **fails** |
+| `INTEGRATION_TESTS_REQUIRED=true` | Job **fails** |
+| `INTEGRATION_TESTS_REQUIRED=false` | Warning, as in the first row, even if IT sources exist |
+
+Recommended actions for consuming projects:
+
+- **No integration tests:** set `JAVA_INTEGRATION_TESTS_ENABLED: "false"` to
+  remove the job (no warning, and no wasted dind runner time), or accept the
+  warning.
+- **ITs with non-default names** (not matched by the patterns above): set
+  `INTEGRATION_TESTS_REQUIRED: "true"`, because auto-detection can't see them.
+- **Custom `IT_SURFACE_MARKERS` / `IT_SERVICE_BOUNDARY_MARKERS`:** they must be
+  valid POSIX extended regexes (`grep -E`). Invalid values now fail the job
+  instead of yielding an empty integration surface.
+
+Projects with ITs but no `@Service`/integration-marker classes no longer stop
+silently during the integration-surface scan. The gate reports
+"no in-scope classes to gate" instead.
 
 Integration jobs run `test-compile` followed by `failsafe:integration-test` and
 `failsafe:verify`, not the full `verify` lifecycle. This compiles main and test

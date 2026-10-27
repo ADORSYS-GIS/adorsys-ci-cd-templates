@@ -5,21 +5,33 @@
 # directory (also used by consuming POMs), then publish separate job reports.
 #
 # When COVERAGE_TEST_REPORTS_DIR is set (integration job: failsafe-reports) and no
-# test report exists there, no tests ran, so there is no coverage to gate. Unless
-# INTEGRATION_TESTS_REQUIRED is "true", the job then ends successfully here and
-# skips the gate. `exit 0` ends the whole job script, so this must stay the
-# second-to-last step, followed only by the coverage gate.
+# test report exists there, no tests ran:
+#   - INTEGRATION_TESTS_REQUIRED=true, or unset while the repo contains IT sources
+#     matching Failsafe's default includes (IT*.java, *IT.java, *ITCase.java under
+#     src/test) → exit 1. A renamed IT or a Failsafe setup the CLI goals ignore
+#     must not turn the job green.
+#   - otherwise → exit 3. The integration job maps it to allow_failure, so the
+#     skipped gate shows as a warning instead of a silent pass.
 .publish-jacoco-step: &publish-jacoco |
   if [ -z "$(find . -type f -path "*/target/site/jacoco/jacoco.xml" -print -quit)" ]; then
     if [ -n "${COVERAGE_TEST_REPORTS_DIR:-}" ] \
       && [ -z "$(find . -type f -path "*/target/${COVERAGE_TEST_REPORTS_DIR}/TEST-*.xml" -print -quit)" ]; then
-      if [ "${INTEGRATION_TESTS_REQUIRED:-false}" = "true" ]; then
-        echo "Coverage report (${COVERAGE_LABEL}): no tests ran (no target/${COVERAGE_TEST_REPORTS_DIR}/TEST-*.xml) and INTEGRATION_TESTS_REQUIRED=true"
+      no_tests="Coverage report (${COVERAGE_LABEL}): no tests ran (no target/${COVERAGE_TEST_REPORTS_DIR}/TEST-*.xml)"
+      required="${INTEGRATION_TESTS_REQUIRED:-}"
+      if [ -z "$required" ]; then
+        it_source="$(find . -type f -path "*/src/test/*" \( -name 'IT*.java' -o -name '*IT.java' -o -name '*ITCase.java' \) -print -quit)"
+        if [ -n "$it_source" ]; then
+          echo "Integration test sources found (e.g. ${it_source}); treating INTEGRATION_TESTS_REQUIRED as true"
+          required=true
+        fi
+      fi
+      if [ "$required" = "true" ]; then
+        echo "${no_tests}, but integration tests are required. Check the IT naming/includes and that Failsafe is configured outside a <pluginManagement>-only or profile-only block."
         exit 1
       fi
-      echo "Coverage report (${COVERAGE_LABEL}): no tests ran (no target/${COVERAGE_TEST_REPORTS_DIR}/TEST-*.xml); skipping the ${COVERAGE_LABEL} coverage gate."
-      echo "Set INTEGRATION_TESTS_REQUIRED=true to fail instead, or JAVA_INTEGRATION_TESTS_ENABLED=false to remove this job."
-      exit 0
+      echo "WARNING: ${no_tests}; the ${COVERAGE_LABEL} coverage gate was skipped (exit 3, reported as an allowed failure)."
+      echo "Set JAVA_INTEGRATION_TESTS_ENABLED=false to remove this job, or INTEGRATION_TESTS_REQUIRED=true to fail instead."
+      exit 3
     fi
     echo "Coverage report (${COVERAGE_LABEL}): JaCoCo XML report not found in target/site/jacoco"
     exit 1
@@ -94,7 +106,8 @@
 # Optional env: COVERAGE_GATE_MODE (all | behavioral | integration),
 #   IT_SURFACE_MARKERS (integration mode only; overrides the default regex of
 #   direct source markers), IT_SERVICE_BOUNDARY_MARKERS (integration mode only;
-#   overrides dependency markers for @Service orchestration classes).
+#   overrides dependency markers for @Service orchestration classes). Both
+#   regexes are validated first; an invalid pattern fails the job.
 # ─────────────────────────────────────────────────────────────────────────────
 .coverage-gate-step: &coverage-gate |
   min="${COVERAGE_MINIMUM}"
@@ -111,10 +124,24 @@
   if [ "${COVERAGE_GATE_MODE}" = "integration" ]; then
     markers="${IT_SURFACE_MARKERS:-@(Rest)?Controller|@(Controller|RestController)Advice|@RequestMapping|@(Get|Post|Put|Delete|Patch)Mapping|@FeignClient|@Repository|@Entity|@Table|JpaRepository|CrudRepository|PagingAndSortingRepository|JpaSpecificationExecutor|@Query|EntityManager|JdbcTemplate|DataSource|@Transactional|@KafkaListener|@JmsListener|@RabbitListener|@StreamListener|@EventListener|@MessageMapping|@Scheduled|RestTemplate|WebClient|@ConfigurationProperties|@EnableConfigurationProperties|@Configuration|implements Filter|OncePerRequestFilter}"
     service_boundary_markers="${IT_SERVICE_BOUNDARY_MARKERS:-Spi|Remote|Client|Repository|Dao|Gateway|Connector|Publisher|Producer|Consumer|Subscriber|EventService|Kafka|Jms|Rabbit|JdbcTemplate|DataSource|EntityManager}"
+    # Validate user-overridable regexes first: the scan below tolerates grep's
+    # "no match" status, which would otherwise also hide an invalid pattern
+    # (grep exit 2) and produce an empty surface, i.e. a false green.
+    check_ere() {
+      rc=0
+      printf '\n' | grep -qE -- "$2" 2>/dev/null || rc=$?
+      if [ "$rc" -gt 1 ]; then
+        echo "Coverage summary (${label}): $1 is not a valid extended regular expression: $2"
+        exit 1
+      fi
+    }
+    check_ere IT_SURFACE_MARKERS "$markers"
+    check_ere IT_SERVICE_BOUNDARY_MARKERS "$service_boundary_markers"
     surface_file="$(mktemp)"
     trap 'rm -f "$surface_file"' EXIT
     # grep exits 1 when a batch has no match (e.g. a repo without @Service); under
     # GitLab's `set -eo pipefail` that would abort the job silently, hence `|| true`.
+    # Invalid patterns were rejected above, so `|| true` only absorbs "no match".
     {
       find . -type f -path "*/src/main/java/*.java" -exec grep -lE "$markers" {} + 2>/dev/null || true
       find . -type f -path "*/src/main/java/*.java" -exec grep -lE '@Service' {} + 2>/dev/null \
@@ -302,9 +329,12 @@
     # Gate the integration surface (component boundaries), not decision logic, and
     # report integration-surface classes that have no IT yet (see .coverage-gate-step).
     COVERAGE_GATE_MODE: "integration"
-    # No Failsafe TEST-*.xml means no ITs ran: skip the gate unless
-    # INTEGRATION_TESTS_REQUIRED=true (see .publish-jacoco-step).
+    # No Failsafe TEST-*.xml means no ITs ran: fail when ITs exist or are
+    # required, otherwise exit 3 (allowed failure below). See .publish-jacoco-step.
     COVERAGE_TEST_REPORTS_DIR: "failsafe-reports"
+  # Exit 3 = "no integration tests ran, gate skipped": shown as a warning.
+  allow_failure:
+    exit_codes: [3]
   cache:
     key: "maven-cache-$CI_COMMIT_REF_SLUG"
     paths:

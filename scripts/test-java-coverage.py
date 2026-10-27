@@ -119,32 +119,72 @@ class JavaCoverageTest(unittest.TestCase):
             self.assertIn("Integration surface: 0 source classes", result.stdout)
             self.assertIn("no in-scope classes to gate", result.stdout)
 
-    def test_integration_publish_without_its_skips_unless_required(self):
+    def test_integration_publish_without_its_warns_or_fails(self):
         it_env = {"COVERAGE_TEST_REPORTS_DIR": "failsafe-reports"}
+
+        def publish(directory, **extra):
+            env = {**it_env, **extra}
+            env.setdefault("INTEGRATION_TESTS_REQUIRED", "")
+            return self.run_script(
+                directory, "publish-jacoco", "jacoco-it", shell=self.GITLAB_SHELL, env=env
+            )
+
         with tempfile.TemporaryDirectory() as directory:
-            result = self.run_script(
-                directory, "publish-jacoco", "jacoco-it", shell=self.GITLAB_SHELL, env=it_env
-            )
-            self.assertEqual(result.returncode, 0, result.stderr)
+            # No IT sources: visible skip via the dedicated allow_failure exit code.
+            result = publish(directory)
+            self.assertEqual(result.returncode, 3, result.stderr)
+            self.assertIn("WARNING", result.stdout)
             self.assertIn("no tests ran", result.stdout)
-            result = self.run_script(
-                directory, "publish-jacoco", "jacoco-it", shell=self.GITLAB_SHELL,
-                env={**it_env, "INTEGRATION_TESTS_REQUIRED": "true"},
-            )
+            result = publish(directory, INTEGRATION_TESTS_REQUIRED="true")
             self.assertEqual(result.returncode, 1, result.stderr)
-            self.assertIn("INTEGRATION_TESTS_REQUIRED=true", result.stdout)
+            self.assertIn("integration tests are required", result.stdout)
+
+            # IT sources exist but did not run (renamed/ignored Failsafe): fail by default.
+            for name in ("LogicIT.java", "ITLogic.java", "LogicITCase.java"):
+                with self.subTest(source=name):
+                    tests = Path(directory) / "module/src/test/java/example"
+                    tests.mkdir(parents=True, exist_ok=True)
+                    for old in tests.iterdir():
+                        old.unlink()
+                    (tests / name).write_text("class X {}", encoding="utf-8")
+                    result = publish(directory)
+                    self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                    self.assertIn("treating INTEGRATION_TESTS_REQUIRED as true", result.stdout)
+            # An explicit false keeps the warning even with IT sources present.
+            self.assertEqual(publish(directory, INTEGRATION_TESTS_REQUIRED="false").returncode, 3)
+
             # ITs ran but JaCoCo produced no report: still a hard failure.
             reports = Path(directory) / "module/target/failsafe-reports"
             reports.mkdir(parents=True)
             (reports / "TEST-example.LogicIT.xml").write_text("<testsuite/>", encoding="utf-8")
-            result = self.run_script(
-                directory, "publish-jacoco", "jacoco-it", shell=self.GITLAB_SHELL, env=it_env
-            )
+            result = publish(directory)
             self.assertEqual(result.returncode, 1, result.stderr)
             self.assertIn("report not found", result.stdout)
 
+    def test_integration_gate_rejects_invalid_marker_regexes(self):
+        for var in ("IT_SURFACE_MARKERS", "IT_SERVICE_BOUNDARY_MARKERS"):
+            with self.subTest(var=var), tempfile.TemporaryDirectory() as directory:
+                source = Path(directory) / "module/src/main/java/example/Svc.java"
+                source.parent.mkdir(parents=True)
+                source.write_text(
+                    "package example;\n@Service\n@RestController\nclass Svc {}\n", encoding="utf-8"
+                )
+                self.write_report(directory, "module", "module,example,Svc,10,90,1,1,1,1,2,2,1,1\n")
+                self.run_script(directory, "publish-jacoco", "jacoco-it", shell=self.GITLAB_SHELL)
+                result = self.run_script(
+                    directory, "coverage-gate", "jacoco-it", mode="integration",
+                    shell=self.GITLAB_SHELL, env={var: "@(RestController"},
+                )
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn(f"{var} is not a valid extended regular expression", result.stdout)
+                self.assertNotIn("Integration surface:", result.stdout)
+
     def test_integration_job_declares_test_reports_dir_and_presets_allow_opt_out(self):
         self.assertIn('COVERAGE_TEST_REPORTS_DIR: "failsafe-reports"', TEMPLATE)
+        self.assertRegex(
+            TEMPLATE,
+            r"\.test-java-integration:\n(?:  .*\n|\n)*?  allow_failure:\n    exit_codes: \[3\]\n",
+        )
         presets = Path(__file__).resolve().parents[1] / "presets"
         for preset in presets.glob("*.yml"):
             text = preset.read_text(encoding="utf-8")
