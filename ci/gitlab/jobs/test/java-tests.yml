@@ -17,7 +17,15 @@
     if [ -n "${COVERAGE_TEST_REPORTS_DIR:-}" ] \
       && [ -z "$(find . -type f -path "*/target/${COVERAGE_TEST_REPORTS_DIR}/TEST-*.xml" -print -quit)" ]; then
       no_tests="Coverage report (${COVERAGE_LABEL}): no tests ran (no target/${COVERAGE_TEST_REPORTS_DIR}/TEST-*.xml)"
-      required="${INTEGRATION_TESTS_REQUIRED:-}"
+      case "$(printf '%s' "${INTEGRATION_TESTS_REQUIRED:-}" | tr '[:upper:]' '[:lower:]')" in
+        true|1|yes) required=true ;;
+        false|0|no) required=false ;;
+        '') required="" ;;
+        *)
+          echo "INTEGRATION_TESTS_REQUIRED must be true or false (got '${INTEGRATION_TESTS_REQUIRED}')"
+          exit 1
+          ;;
+      esac
       if [ -z "$required" ]; then
         it_source="$(find . -type f -path "*/src/test/*" \( -name 'IT*.java' -o -name '*IT.java' -o -name '*ITCase.java' \) -print -quit)"
         if [ -n "$it_source" ]; then
@@ -26,7 +34,7 @@
         fi
       fi
       if [ "$required" = "true" ]; then
-        echo "${no_tests}, but integration tests are required. Check the IT naming/includes and that Failsafe is configured outside a <pluginManagement>-only or profile-only block."
+        echo "${no_tests}, but integration tests are required. Check the IT naming/includes, and move any Failsafe <configuration> from inside an <execution> to plugin level (execution-level config is ignored when the goals are called directly)."
         exit 1
       fi
       echo "WARNING: ${no_tests}; the ${COVERAGE_LABEL} coverage gate was skipped (exit 3, reported as an allowed failure)."

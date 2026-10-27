@@ -152,6 +152,15 @@ class JavaCoverageTest(unittest.TestCase):
                     self.assertIn("treating INTEGRATION_TESTS_REQUIRED as true", result.stdout)
             # An explicit false keeps the warning even with IT sources present.
             self.assertEqual(publish(directory, INTEGRATION_TESTS_REQUIRED="false").returncode, 3)
+            # Values are case-insensitive and accept 1/yes, 0/no; anything else fails.
+            for value, expected in (("TRUE", 1), ("yes", 1), ("1", 1), ("False", 3), ("no", 3), ("0", 3)):
+                with self.subTest(value=value):
+                    self.assertEqual(
+                        publish(directory, INTEGRATION_TESTS_REQUIRED=value).returncode, expected
+                    )
+            result = publish(directory, INTEGRATION_TESTS_REQUIRED="maybe")
+            self.assertEqual(result.returncode, 1, result.stderr)
+            self.assertIn("INTEGRATION_TESTS_REQUIRED must be true or false", result.stdout)
 
             # ITs ran but JaCoCo produced no report: still a hard failure.
             reports = Path(directory) / "module/target/failsafe-reports"
