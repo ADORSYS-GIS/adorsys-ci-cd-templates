@@ -113,7 +113,20 @@
       # Counts unresolved issues matching a single api/issues/search filter.
       count_issues() {
         body=$(sonar_api_get "${SONAR_HOST_URL}/api/issues/search?componentKeys=${project_key}&${issue_scope}&${1}&resolved=false&ps=1")
-        json_field "$body" total
+        if ! count=$(printf '%s' "$body" | python3 -c '
+      import json, sys
+      data = json.load(sys.stdin)
+      total = (data.get("paging") or {}).get("total")
+      if total is None:
+          total = data.get("total")
+      if type(total) is not int or total < 0:
+          sys.exit("Missing or invalid issue count")
+      print(total)
+      '); then
+          echo "ERROR: SonarQube issue search returned no valid non-negative integer count." >&2
+          return 1
+        fi
+        printf '%s' "$count"
       }
 
       # Counts distinct unresolved issues mapped to a security standard that has no
