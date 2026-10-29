@@ -5,7 +5,7 @@
 
 .lint-angular-ui:
   # Angular 20 requires Node >=20.19 or >=22.12; keep in sync with each UI's package.json engines.
-  image: node:22.12.0-bookworm-slim
+  image: node:22.23.4-bookworm-slim
   stage: Lint
   before_script: []
   variables:

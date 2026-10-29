@@ -6,7 +6,7 @@
 
 .npm-audit:
   stage: Security
-  image: node:20-bookworm-slim
+  image: node:22.23.4-bookworm-slim
   variables:
     NPM_AUDIT_DIRS: "."
     NPM_AUDIT_LEVEL: "high"
