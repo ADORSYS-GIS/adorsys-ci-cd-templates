@@ -29,6 +29,102 @@
     - name: docker:dind
       alias: docker
 
+# Build every target, scan the local image IDs, then publish only if all pass.
+.docker-build-scan-push:
+  extends: .docker-build-push-base
+  stage: Package
+  allow_failure: false
+  variables:
+    TRIVY_SCANNER_IMAGE: "aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c"
+    TRIVY_CACHE_DIR: ".trivycache/"
+    TRIVY_DB_REPOSITORY: "public.ecr.aws/aquasecurity/trivy-db:2,mirror.gcr.io/aquasec/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2"
+    TRIVY_JAVA_DB_REPOSITORY: "public.ecr.aws/aquasecurity/trivy-java-db:1,mirror.gcr.io/aquasec/trivy-java-db:1,ghcr.io/aquasecurity/trivy-java-db:1"
+    TRIVY_TIMEOUT: "15m0s"
+    TRIVY_NO_PROGRESS: "true"
+    DOCKER_SCAN_SEVERITY: "HIGH,CRITICAL"
+    # Whitespace-separated image-name=build-context pairs.
+    DOCKER_BUILD_TARGETS: ""
+  cache:
+    key: "trivy-image-cache"
+    paths:
+      - .trivycache/
+  before_script:
+    - !reference [.docker-build-push-base, before_script]
+    - |
+      set -eu
+      scanner_container=$(docker create "$TRIVY_SCANNER_IMAGE")
+      trap 'docker rm "$scanner_container" >/dev/null' EXIT
+      docker cp "$scanner_container:/usr/local/bin/trivy" /usr/local/bin/trivy
+      docker rm "$scanner_container" >/dev/null
+      trap - EXIT
+      trivy --version
+  script:
+    - |
+      set -eu
+      : "${DOCKER_BUILD_TARGETS:?DOCKER_BUILD_TARGETS must list image-name=build-context pairs}"
+      : "${DOCKER_TAG:?DOCKER_TAG must be configured}"
+      : "${DOCKERHUB_NAMESPACE:?DOCKERHUB_NAMESPACE must be configured}"
+      : "${DOCKER_SCAN_SEVERITY:?DOCKER_SCAN_SEVERITY must be configured}"
+      mkdir -p trivy-images
+      build_count=0
+      for target in $DOCKER_BUILD_TARGETS; do
+        case "$target" in
+          *=*) ;;
+          *) echo "Invalid build target: $target" >&2; exit 1 ;;
+        esac
+        name=${target%%=*}
+        context=${target#*=}
+        if [ -z "$name" ] || [ -z "$context" ]; then
+          echo "Build target requires both image name and context: $target" >&2
+          exit 1
+        fi
+        docker build -t "${DOCKER_REGISTRY}/${DOCKERHUB_NAMESPACE}/${name}:${DOCKER_TAG}" "$context"
+        build_count=$((build_count + 1))
+      done
+      if [ "$build_count" -eq 0 ]; then
+        echo "No image build targets configured." >&2
+        exit 1
+      fi
+      trivy image --download-db-only
+      trivy --version
+      scan_failed=0
+      for target in $DOCKER_BUILD_TARGETS; do
+        name=${target%%=*}
+        image="${DOCKER_REGISTRY}/${DOCKERHUB_NAMESPACE}/${name}:${DOCKER_TAG}"
+        image_id=$(docker image inspect --format '{{.Id}}' "$image")
+        printf '%s %s\n' "$image" "$image_id" >> trivy-images/images.txt
+        if trivy image --image-src docker --scanners vuln --pkg-types os,library \
+          --severity "$DOCKER_SCAN_SEVERITY" --ignore-unfixed=false \
+          --ignorefile /dev/null --timeout "$TRIVY_TIMEOUT" \
+          --format json --output "trivy-images/${name}.json" \
+          --exit-code 1 "$image_id"; then
+          echo "Image scan passed: $image"
+        else
+          echo "Image scan failed (vulnerability or scanner error): $image" >&2
+          scan_failed=1
+        fi
+        if [ -s "trivy-images/${name}.json" ]; then
+          trivy convert --format table "trivy-images/${name}.json"
+        else
+          echo "Missing image scan report: $image" >&2
+          scan_failed=1
+        fi
+      done
+      if [ "$scan_failed" -ne 0 ]; then
+        echo "No images published: at least one image scan failed." >&2
+        exit 1
+      fi
+      for target in $DOCKER_BUILD_TARGETS; do
+        name=${target%%=*}
+        docker push "${DOCKER_REGISTRY}/${DOCKERHUB_NAMESPACE}/${name}:${DOCKER_TAG}"
+      done
+      docker logout "$DOCKER_REGISTRY"
+  artifacts:
+    when: always
+    paths:
+      - trivy-images/
+    expire_in: "30 days"
+
 .docker-login-registry:
   before_script:
     - ': "${DOCKER_REGISTRY:?DOCKER_REGISTRY must be configured as a GitLab CI variable}"'
