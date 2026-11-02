@@ -46,12 +46,16 @@ pairs, plus `DOCKER_TAG`, `DOCKERHUB_NAMESPACE` and the registry credentials
 required by `.docker-build-push-base`. JSON scan reports and image IDs are
 retained as CI artifacts for 30 days, including on failure. The template uses
 the base's pinned Docker CLI/DinD pair; it does not use the legacy DinD variant.
+`DOCKER_BUILD_TARGETS` may be set globally or per job. The template deliberately
+does not define a job-level default, which would override a consumer's global
+value. Missing or empty targets still fail before any image is built.
 Filesystem and Dockerfile configuration scans do not replace this image scan.
 Existing build/push templates remain unchanged for other consumers.
 
-Run the gate regression tests with
-`python3 scripts/test-docker-image-gate.py`. Consumers must select a template
-revision containing `.docker-build-scan-push` before using it.
+Run the target-configuration regression tests with
+`python3 scripts/test-docker-build-targets.py`. Consumers must select a template
+revision containing this fix; retrying a job in an existing pipeline does not
+reload included templates. Create a new pipeline after updating the reference.
 
 ## Open source
 
