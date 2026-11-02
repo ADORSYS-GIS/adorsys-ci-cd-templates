@@ -42,8 +42,6 @@
     TRIVY_TIMEOUT: "15m0s"
     TRIVY_NO_PROGRESS: "true"
     DOCKER_SCAN_SEVERITY: "HIGH,CRITICAL"
-    # Whitespace-separated image-name=build-context pairs.
-    DOCKER_BUILD_TARGETS: ""
   cache:
     key: "trivy-image-cache"
     paths:
