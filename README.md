@@ -68,5 +68,6 @@ projects.
 - [GitHub reusable build workflows](docs/github-build.md)
 - [GitHub reusable lint workflows](docs/github-lint.md)
 - [Reusable SAST workflows (GitHub + GitLab)](docs/sast.md)
+- [Secret scanning (Gitleaks) workflow](docs/sast.md#secret-scanning-gitleaks)
 - [SBOM generation (GitHub + GitLab)](docs/sbom.md)
 - [SonarQube scan setup and usage](docs/sonarqube.md)
