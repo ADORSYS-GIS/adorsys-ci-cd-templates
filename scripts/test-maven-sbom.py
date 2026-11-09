@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 import json
+import io
 import os
 import shutil
 import subprocess
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.error import HTTPError
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -107,6 +112,82 @@ build_artifact_links "https://git.example.invalid/team/project" "" "" "" "$CYCLO
 """
         output = run(["bash", "-c", script], ROOT).stdout
         self.assertIn("/123/artifacts/target/bom-develop.json", output)
+
+    def test_remote_helpers_use_configured_project_ref_and_authentication(self):
+        template = (ROOT / "ci/gitlab/jobs/security/sbom.yml").read_text()
+        bootstrap = textwrap.dedent(template.split("python3 - <<'PY'\n", 1)[1].split("      PY\n", 1)[0])
+        for token_env, header in (
+            ({"CI_JOB_TOKEN": "fixture-job-token"}, "Job-token"),
+            ({"GITLAB_TOKEN": "fixture-private-token"}, "Private-token"),
+        ):
+            with self.subTest(header=header):
+                requests = []
+
+                def download(request, timeout):
+                    requests.append(request)
+                    url = urlsplit(request.full_url)
+                    self.assertIn("/projects/team%2Ftemplates/repository/files/", url.path)
+                    self.assertEqual(parse_qs(url.query)["ref"], ["feature/improve-sbom-in-owasp-job"])
+                    self.assertEqual(timeout, 60)
+                    self.assertIn(header, dict(request.header_items()))
+                    path = unquote(url.path.split("/repository/files/", 1)[1].removesuffix("/raw"))
+                    return io.BytesIO((ROOT / path).read_bytes())
+
+                environment = {
+                    "ADORSYS_CI_TEMPLATES_PROJECT": "team/templates",
+                    "ADORSYS_CI_TEMPLATES_REF": "feature/improve-sbom-in-owasp-job",
+                    "CI_API_V4_URL": "https://git.example.invalid/api/v4",
+                    "SBOM_HELPERS_DIR": str(self.temp_path / header),
+                    **token_env,
+                }
+                with patch.dict(os.environ, environment, clear=True), patch(
+                    "urllib.request.urlopen", side_effect=download
+                ):
+                    exec(compile(bootstrap, "<sbom-bootstrap>", "exec"), {})
+                self.assertEqual(len(requests), 3)
+                self.assertTrue(
+                    (Path(environment["SBOM_HELPERS_DIR"]) / "ci/gitlab/scripts/generate-maven-sbom.sh").is_file()
+                )
+                with patch.dict(os.environ, environment, clear=True), patch(
+                    "urllib.request.urlopen",
+                    side_effect=HTTPError("https://git.example.invalid", 403, "Forbidden", {}, None),
+                ):
+                    with self.assertRaises(HTTPError):
+                        exec(compile(bootstrap, "<sbom-bootstrap>", "exec"), {})
+
+    def test_legacy_include_exposes_strict_alias_without_cycle(self):
+        base = (ROOT / "ci/gitlab/jobs/security/cyclonedx-owasp.yml").read_text()
+        strict = (ROOT / "ci/gitlab/jobs/security/cyclonedx-owasp-strict.yml").read_text()
+        self.assertIn("local: 'ci/gitlab/jobs/security/cyclonedx-owasp-strict.yml'", base)
+        self.assertNotIn("\ninclude:", strict)
+
+    def test_detached_mr_and_tag_checkouts_have_source_labels(self):
+        project = self.copy_fixture("single")
+        run(["git", "checkout", "--detach"], project)
+        fake_bin = self.temp_path / "fake-bin"
+        fake_bin.mkdir()
+        fake_mvn = fake_bin / "mvn"
+        fake_mvn.write_text("#!/bin/sh\nexit 19\n")
+        fake_mvn.chmod(0o755)
+        for context, label in (
+            ({"CI_MERGE_REQUEST_SOURCE_BRANCH_NAME": "feature/sbom"}, "feature/sbom"),
+            ({"CI_COMMIT_REF_NAME": "v1.0.0"}, "v1.0.0"),
+        ):
+            with self.subTest(label=label):
+                result = self.run_generator(
+                    project,
+                    {
+                        "CI_COMMIT_BRANCH": "",
+                        "CI_MERGE_REQUEST_SOURCE_BRANCH_NAME": "",
+                        "CI_COMMIT_REF_NAME": "",
+                        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                        **context,
+                    },
+                    check=False,
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f"Generating SBOM for {label} at ", result.stdout)
+                self.assertIn("Maven build failed", result.stdout)
 
     def test_single_module_has_transitives_and_excludes_test_scope(self):
         project = self.copy_fixture("single")

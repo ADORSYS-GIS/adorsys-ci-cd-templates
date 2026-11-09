@@ -3,6 +3,7 @@
 # owned by the Dependency-Check templates.
 include:
   - local: 'ci/gitlab/jobs/security/owasp-dependency-check.yml'
+  - local: 'ci/gitlab/jobs/security/cyclonedx-owasp-strict.yml'
 
 .cyclonedx-owasp-variables:
   variables:

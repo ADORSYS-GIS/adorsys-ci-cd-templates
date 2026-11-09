@@ -33,7 +33,14 @@ soft-failure behavior, NVD cache, and unavailable-NVD fallback. The strict
 Dependency-Check variants remain pipeline-blocking; neither scanner outcome
 can convert an SBOM generation or validation failure into success.
 
-The job requires `JAVA_MAVEN_IMAGE`, rebuilds the checked-out source and runs
+The job requires `JAVA_MAVEN_IMAGE`, `ADORSYS_CI_TEMPLATES_PROJECT`, and
+`ADORSYS_CI_TEMPLATES_REF`. Set the template ref to the same ref as the YAML
+include. It downloads its helpers and schema via `CI_API_V4_URL`, using
+`GITLAB_TOKEN` when configured or `CI_JOB_TOKEN` otherwise. The token must have
+read access to the templates repository (including any cross-project job-token
+allowlist required by your GitLab instance).
+
+The job rebuilds the checked-out source and runs
 the exact Maven goal
 `org.cyclonedx:cyclonedx-maven-plugin:2.9.3:makeAggregateBom`. It writes
 `target/sbom.json`, validates it against the vendored, checksum-pinned

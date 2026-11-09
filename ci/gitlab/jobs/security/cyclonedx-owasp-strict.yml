@@ -1,7 +1,5 @@
-# Backwards-compatible strict OWASP aliases. Include sbom.yml separately to
-# generate a CycloneDX BOM; the scanner remains an independent job.
-include:
-  - local: 'ci/gitlab/jobs/security/cyclonedx-owasp.yml'
+# Included by cyclonedx-owasp.yml. Include sbom.yml separately to generate a
+# CycloneDX BOM; the scanner remains an independent job.
 
 .cyclonedx-owasp-strict:
   extends:

@@ -30,7 +30,7 @@ mkdir -p target "$STAGING_DIR"
 rm -f "$STAGING_DIR"/*.json target/sbom.json target/bom.json \
   target/sbom-*.json target/bom-*.json target/sbom-manifest.json
 
-TARGET_BRANCH="${CI_COMMIT_BRANCH:-$(git branch --show-current)}"
+TARGET_BRANCH="${CI_COMMIT_BRANCH:-${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME:-${CI_COMMIT_REF_NAME:-$(git branch --show-current)}}}"
 [[ -n "$TARGET_BRANCH" ]] || {
   echo "ERROR: Could not determine the source branch for this SBOM." >&2
   exit 1

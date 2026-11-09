@@ -12,7 +12,39 @@
     - java -version
     - mvn -version
   script:
-    - bash ci/gitlab/scripts/generate-maven-sbom.sh
+    - |
+      set -eu
+      SBOM_HELPERS_DIR="$(mktemp -d)"
+      export SBOM_HELPERS_DIR
+      trap 'rm -rf "$SBOM_HELPERS_DIR"' EXIT
+      python3 - <<'PY'
+      import os
+      from pathlib import Path
+      from urllib.parse import quote, urlencode
+      from urllib.request import Request, urlopen
+
+      project = quote(os.environ["ADORSYS_CI_TEMPLATES_PROJECT"], safe="")
+      ref = os.environ["ADORSYS_CI_TEMPLATES_REF"]
+      if not project or not ref:
+          raise SystemExit("SBOM: template project and ref must not be empty")
+      base = os.environ["CI_API_V4_URL"] + "/projects/" + project + "/repository/files/"
+      headers = (
+          {"PRIVATE-TOKEN": os.environ["GITLAB_TOKEN"]}
+          if os.environ.get("GITLAB_TOKEN")
+          else {"JOB-TOKEN": os.environ["CI_JOB_TOKEN"]}
+      )
+      for path in (
+          "ci/gitlab/scripts/generate-maven-sbom.sh",
+          "ci/gitlab/scripts/validate-maven-sbom.py",
+          "ci/gitlab/schemas/cyclonedx-bom-1.6.schema.json",
+      ):
+          destination = Path(os.environ["SBOM_HELPERS_DIR"]) / path
+          destination.parent.mkdir(parents=True, exist_ok=True)
+          request = Request(base + quote(path, safe="") + "/raw?" + urlencode({"ref": ref}), headers=headers)
+          with urlopen(request, timeout=60) as response:
+              destination.write_bytes(response.read())
+      PY
+      bash "$SBOM_HELPERS_DIR/ci/gitlab/scripts/generate-maven-sbom.sh"
   timeout: 4h
   allow_failure: false
   artifacts:
