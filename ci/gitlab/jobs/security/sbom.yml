@@ -38,6 +38,8 @@
           "ci/gitlab/scripts/generate-maven-sbom.sh",
           "ci/gitlab/scripts/validate-maven-sbom.py",
           "ci/gitlab/schemas/cyclonedx-bom-1.6.schema.json",
+          "ci/gitlab/schemas/spdx.schema.json",
+          "ci/gitlab/schemas/jsf-0.82.schema.json",
       ):
           destination = Path(os.environ["SBOM_HELPERS_DIR"]) / path
           destination.parent.mkdir(parents=True, exist_ok=True)

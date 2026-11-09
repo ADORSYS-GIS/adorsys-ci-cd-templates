@@ -2,6 +2,7 @@
 import json
 import io
 import os
+import runpy
 import shutil
 import subprocess
 import tempfile
@@ -145,10 +146,14 @@ build_artifact_links "https://git.example.invalid/team/project" "" "" "" "$CYCLO
                     "urllib.request.urlopen", side_effect=download
                 ):
                     exec(compile(bootstrap, "<sbom-bootstrap>", "exec"), {})
-                self.assertEqual(len(requests), 3)
+                self.assertEqual(len(requests), 5)
                 self.assertTrue(
                     (Path(environment["SBOM_HELPERS_DIR"]) / "ci/gitlab/scripts/generate-maven-sbom.sh").is_file()
                 )
+                for filename in ("spdx.schema.json", "jsf-0.82.schema.json"):
+                    self.assertTrue(
+                        (Path(environment["SBOM_HELPERS_DIR"]) / "ci/gitlab/schemas" / filename).is_file()
+                    )
                 with patch.dict(os.environ, environment, clear=True), patch(
                     "urllib.request.urlopen",
                     side_effect=HTTPError("https://git.example.invalid", 403, "Forbidden", {}, None),
@@ -343,6 +348,57 @@ Path("target/sbom.json").write_text(json.dumps(bom))
         )
         remediation = (ROOT / "ci/gitlab/jobs/security/unified-remediation-scheduled.yml").read_text()
         self.assertIn('cp "target/bom-${label}.json" target/bom.json', remediation)
+
+    def test_validator_resolves_license_and_signature_schemas_offline(self):
+        project = self.copy_fixture("single")
+        bom_path = project / "sbom.json"
+        bom = {
+            "bomFormat": "CycloneDX",
+            "specVersion": "1.6",
+            "version": 1,
+            "metadata": {"component": {"type": "application", "name": "sbom-single-fixture", "bom-ref": "root"}},
+            "components": [{
+                "type": "library", "name": "dependency", "bom-ref": "dependency",
+                "purl": "pkg:maven/example/dependency@1",
+                "licenses": [{"license": {"id": "Apache-2.0"}}],
+            }],
+            "dependencies": [{"ref": "root", "dependsOn": ["dependency"]}, {"ref": "dependency"}],
+            "signature": {"signers": [{"algorithm": "https://example.invalid/algorithm", "value": "fixture"}]},
+        }
+        command = [str(VALIDATOR), str(bom_path), str(SCHEMA), str(project / "pom.xml"), "branch", "commit"]
+        with patch("socket.socket.connect", side_effect=AssertionError("network access is forbidden")), patch.dict(
+            os.environ, {"NO_PROXY": "*"}
+        ), patch("sys.argv", command):
+            bom_path.write_text(json.dumps(bom))
+            runpy.run_path(str(VALIDATOR), run_name="__main__")
+            for invalid in ("license", "signature"):
+                with self.subTest(invalid=invalid):
+                    broken = json.loads(json.dumps(bom))
+                    if invalid == "license":
+                        broken["components"][0]["licenses"][0]["license"]["id"] = "not-an-spdx-license"
+                    else:
+                        del broken["signature"]["signers"][0]["value"]
+                    bom_path.write_text(json.dumps(broken))
+                    with self.assertRaisesRegex(SystemExit, "not valid against CycloneDX 1.6"):
+                        runpy.run_path(str(VALIDATOR), run_name="__main__")
+
+    def test_validator_rejects_missing_or_modified_companion_schema(self):
+        project = self.copy_fixture("single")
+        local_schema = project / SCHEMA.name
+        shutil.copyfile(SCHEMA, local_schema)
+        bom_path = project / "sbom.json"
+        bom_path.write_text("{}")
+        command = [
+            "python3", str(VALIDATOR), str(bom_path), str(local_schema),
+            str(project / "pom.xml"), "branch", "commit",
+        ]
+        result = run(command, project, check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot load schema", result.stdout)
+        (project / "spdx.schema.json").write_text("{}")
+        result = run(command, project, check=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("schema checksum mismatch", result.stdout)
 
     def test_validator_rejects_missing_malformed_and_wrong_schema_output(self):
         project = self.copy_fixture("single")

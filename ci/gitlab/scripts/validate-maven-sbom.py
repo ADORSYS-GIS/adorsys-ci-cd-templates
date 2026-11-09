@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Decorate and validate CycloneDX 1.6 Maven reactor BOMs."""
 
+import hashlib
 import json
 import sys
 import xml.etree.ElementTree as ET
@@ -11,6 +12,34 @@ import jsonschema
 
 def fail(message):
     raise SystemExit(f"SBOM validation failed: {message}")
+
+
+def schema_validator(schema, schema_path):
+    store = {schema["$id"]: schema}
+    for filename, digest in (
+        ("spdx.schema.json", "baa9d3bd1ed57b6751b0887edead6b5063ff53ff7429cf85d476c6c94af0166e"),
+        ("jsf-0.82.schema.json", "8bae002c25e723db7ee1f26afde680ae1a2b1a8f6b4b4b0fd65dc3becb090aae"),
+    ):
+        path = schema_path.parent / filename
+        try:
+            data = path.read_bytes()
+            if hashlib.sha256(data).hexdigest() != digest:
+                fail(f"schema checksum mismatch: {path}")
+            companion = json.loads(data)
+        except (OSError, json.JSONDecodeError) as error:
+            fail(f"cannot load schema {path}: {error}")
+        store[companion["$id"]] = companion
+
+    def reject_remote_schema(uri):
+        fail(f"schema reference is not bundled locally: {uri}")
+
+    # RefResolver supports the distro jsonschema version installed by the CI job.
+    resolver = jsonschema.RefResolver.from_schema(
+        schema,
+        store=store,
+        handlers={"http": reject_remote_schema, "https": reject_remote_schema},
+    )
+    return jsonschema.Draft7Validator(schema, resolver=resolver)
 
 
 def text(element, name):
@@ -50,7 +79,7 @@ def main():
     except (OSError, json.JSONDecodeError) as error:
         fail(str(error))
 
-    validator = jsonschema.Draft7Validator(schema)
+    validator = schema_validator(schema, schema_path)
     errors = sorted(
         validator.iter_errors(bom),
         key=lambda error: tuple(str(part) for part in error.absolute_path),

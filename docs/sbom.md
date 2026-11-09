@@ -52,6 +52,9 @@ the exact Maven goal
 CycloneDX 1.6 JSON schema, and preserves `target/bom.json` as a compatibility
 copy for remediation consumers. Both files are uploaded in the artifact named
 `sbom`; the artifact is retained for 30 days, including on job failure.
+The referenced SPDX and JSF schemas are also vendored from the official
+CycloneDX specification 1.6 release and checksum-pinned. Schema references are
+resolved locally; validation does not fetch schemas from external websites.
 
 The official [aggregate goal documentation](https://cyclonedx.github.io/cyclonedx-maven-plugin/makeAggregateBom-mojo.html)
 describes the aggregate reactor output. The pinned
