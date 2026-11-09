@@ -131,8 +131,41 @@ All GitHub SAST workflows accept `runner` and `working-directory` (repo-relative
 | `sast-shell.yml`                 | ShellCheck               | none                       |
 | `sast-powershell.yml`            | PSScriptAnalyzer         | none                       |
 | `sast-iac.yml`                   | Checkov (Terraform/Helm) | none                       |
+| `secret-scan.yml`                | Gitleaks (full history)  | none                       |
 
-Each GitHub workflow pipes its SARIF results through
+### Secret scanning (Gitleaks)
+
+The `secret-scan.yml` reusable workflow runs Gitleaks over the **full git history**
+(`--log-opts=--all` by default) on `push` and `pull_request`, uploads a SARIF report as a
+`gitleaks-report` artifact, and gates on the same protected-branch policy as the other
+security workflows (hard-fail on protected branches, advisory on feature branches). The
+GitLab `.gitleaks` job provides the equivalent full-history scan (with `GIT_DEPTH: 0` to
+ensure the full history is cloned).
+
+```yaml
+jobs:
+  secret-scan:
+    uses: ADORSYS-GIS/adorsys-ci-cd-templates/.github/workflows/secret-scan.yml@main
+    with:
+      runner: ubuntu-latest
+      working-directory: "."
+    secrets:
+      NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+```
+
+The optional `NOTIFY_WEBHOOK_URL` secret posts a notification (Slack-compatible JSON)
+whenever Gitleaks reports a finding; omit it to skip notifications. Point it at any channel
+your team uses for security alerts (e.g. a Slack webhook or an alerting/log-collection
+endpoint).
+
+If no notification is configured, results are still fully available: the `gitleaks-report`
+SARIF artifact and the Gitleaks step log (values redacted) capture every finding, and the
+scan check fails on protected branches when secrets are present. Unlike the `sast-*`
+workflows, `secret-scan.yml` does not use reviewdog: history-based findings often reference
+files that no longer exist, so results are exposed via the SARIF artifact and the Gitleaks
+step log instead of inline check annotations.
+
+Each GitHub SAST workflow pipes its SARIF results through
 [`reviewdog`](https://github.com/reviewdog/reviewdog) (`-f=sarif`, `-filter-mode=file`),
 so findings in any file the PR touches appear as **check annotations** on the PR (or on
 the commit for pushes to protected branches). This includes pre-existing findings in a
