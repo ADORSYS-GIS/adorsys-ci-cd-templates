@@ -33,6 +33,11 @@ soft-failure behavior, NVD cache, and unavailable-NVD fallback. The strict
 Dependency-Check variants remain pipeline-blocking; neither scanner outcome
 can convert an SBOM generation or validation failure into success.
 
+The job has `needs: []`: when its rules include it, it can start as soon as a
+runner is available, without waiting for earlier stages. It consumes no
+upstream job artifacts and rebuilds its own Maven reactor, so Build, lint,
+test, E2E, and OWASP jobs are not prerequisites.
+
 The job requires `JAVA_MAVEN_IMAGE`, `ADORSYS_CI_TEMPLATES_PROJECT`, and
 `ADORSYS_CI_TEMPLATES_REF`. Set the template ref to the same ref as the YAML
 include. It downloads its helpers and schema via `CI_API_V4_URL`, using
@@ -62,7 +67,7 @@ output and confirms that every reactor module is represented.
 
 The job rebuilds from the current checkout rather than reusing Build artifacts,
 and does not share the OWASP NVD cache or fallback path. It uses
-``MAVEN_SETTINGS_PATH` when set and normal Maven configuration such as
+`MAVEN_SETTINGS_PATH` when set and normal Maven configuration such as
 `.mvn/maven.config` (which applies the same Maven CLI profiles to both build
 and BOM generation). Set `MAVEN_SETTINGS_PATH` at project/group scope when the
 consuming build uses a non-default settings file; ensure any profiles used by

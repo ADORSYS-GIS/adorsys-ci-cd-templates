@@ -87,6 +87,7 @@ class MavenSbomTest(unittest.TestCase):
             self.assertIn("extends: .owasp-dependency-check", content)
         template = (ROOT / "ci/gitlab/jobs/security/sbom.yml").read_text()
         self.assertIn('name: "sbom"', template)
+        self.assertIn("\n  needs: []\n", template)
         self.assertIn("target/sbom.json", template)
         self.assertIn("when: always", template)
         self.assertIn("makeAggregateBom", (ROOT / "ci/gitlab/scripts/generate-maven-sbom.sh").read_text())

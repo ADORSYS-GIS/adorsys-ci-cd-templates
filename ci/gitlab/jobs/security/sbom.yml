@@ -2,6 +2,7 @@
 .maven-sbom:
   image: "${JAVA_MAVEN_IMAGE}"
   stage: "Security"
+  needs: []
   before_script:
     - >
       test -n "${JAVA_MAVEN_IMAGE}" ||
