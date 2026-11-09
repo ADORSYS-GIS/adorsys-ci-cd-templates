@@ -2,6 +2,7 @@
 """Decorate and validate CycloneDX 1.6 Maven reactor BOMs."""
 
 import hashlib
+import html
 import json
 import sys
 import xml.etree.ElementTree as ET
@@ -65,12 +66,105 @@ def project_artifact_ids(pom_path):
     return artifact_ids
 
 
+def render_html(bom, branch, commit):
+    def escape(value):
+        return html.escape(str(value))
+
+    root = bom["metadata"]["component"]
+    components = [root, *bom["components"]]
+    anchors = {component["bom-ref"]: f"component-{index}" for index, component in enumerate(components)}
+
+    def component_link(ref):
+        return f'<a href="#{anchors[ref]}">{escape(ref)}</a>'
+
+    rows = []
+    for component in components:
+        licenses = []
+        for choice in component.get("licenses", []):
+            license_info = choice.get("license", {})
+            licenses.append(choice.get("expression") or license_info.get("id") or license_info.get("name", ""))
+        values = (
+            component.get("group", ""),
+            component["name"],
+            component.get("version", ""),
+            component["type"],
+            component.get("scope", ""),
+            "; ".join(licenses) or "Not specified",
+            component.get("purl", ""),
+            component["bom-ref"],
+        )
+        cells = "".join(f"<td>{escape(value)}</td>" for value in values)
+        rows.append(f'<tr id="{anchors[component["bom-ref"]]}">{cells}</tr>')
+
+    relationships = []
+    edge_count = 0
+    for dependency in bom["dependencies"]:
+        targets = dependency.get("dependsOn", [])
+        edge_count += len(targets)
+        links = "<ul>" + "".join(f"<li>{component_link(ref)}</li>" for ref in targets) + "</ul>"
+        relationships.append(
+            f"<tr><td>{component_link(dependency['ref'])}</td>"
+            f"<td>{links if targets else 'No dependencies recorded'}</td></tr>"
+        )
+
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'">
+<title>SBOM inventory - {escape(root['name'])}</title>
+<style>
+body {{ font: 1rem system-ui, sans-serif; margin: 2rem; color: #17212b; background: #fff; }}
+a {{ color: #0645ad; }}
+table {{ border-collapse: collapse; width: 100%; }}
+th, td {{ border: 1px solid #ccd3da; padding: .5rem; text-align: left; vertical-align: top; overflow-wrap: anywhere; }}
+th {{ background: #edf2f7; }}
+tr:target {{ background: #fff3cc; }}
+.table-scroll {{ overflow-x: auto; }}
+dt {{ font-weight: bold; }}
+dd {{ margin-bottom: .5rem; overflow-wrap: anywhere; }}
+@media print {{ body {{ margin: 0; }} }}
+</style>
+</head>
+<body>
+<h1>SBOM inventory</h1>
+<p>Inventory only: this is not an OWASP vulnerability scan. The CycloneDX JSON is the authoritative SBOM.</p>
+<dl>
+<dt>Project</dt><dd>{escape(root['name'])}</dd>
+<dt>Version</dt><dd>{escape(root.get('version', 'Not specified'))}</dd>
+<dt>Branch / ref</dt><dd>{escape(branch)}</dd>
+<dt>Source commit</dt><dd>{escape(commit)}</dd>
+<dt>Format</dt><dd>CycloneDX {escape(bom['specVersion'])}</dd>
+<dt>Generated timestamp</dt><dd>{escape(bom['metadata'].get('timestamp', 'Not specified'))}</dd>
+<dt>Dependency components</dt><dd>{len(bom['components'])}</dd>
+<dt>Dependency relationships</dt><dd>{edge_count}</dd>
+</dl>
+<nav><a href="#components">Components</a> | <a href="#relationships">Dependency relationships</a></nav>
+<h2 id="components">Components (including root project)</h2>
+<div class="table-scroll"><table>
+<thead><tr><th>Group</th><th>Name</th><th>Version</th><th>Type</th><th>Scope</th><th>Licenses</th>
+<th>Package URL</th><th>BOM reference</th></tr></thead>
+<tbody>{''.join(rows)}</tbody>
+</table></div>
+<h2 id="relationships">Dependency relationships</h2>
+<div class="table-scroll"><table>
+<thead><tr><th>Component</th><th>Depends on</th></tr></thead>
+<tbody>{''.join(relationships)}</tbody>
+</table></div>
+</body>
+</html>
+"""
+
+
 def main():
     if len(sys.argv) != 6:
         fail("usage: validate-maven-sbom.py BOM SCHEMA POM BRANCH COMMIT")
 
     bom_path, schema_path, pom_path = map(Path, sys.argv[1:4])
     branch, commit = sys.argv[4:6]
+    report_path = bom_path.with_suffix(".html")
+    report_path.unlink(missing_ok=True)
     if not bom_path.is_file() or bom_path.stat().st_size == 0:
         fail(f"BOM is missing or empty: {bom_path}")
     try:
@@ -149,6 +243,10 @@ def main():
     )
     if errors:
         fail(f"CI source metadata is invalid: {errors[0].message}")
+    try:
+        report_path.write_text(render_html(bom, branch, commit), encoding="utf-8")
+    except OSError as error:
+        fail(f"cannot write HTML inventory {report_path}: {error}")
 
 
 if __name__ == "__main__":

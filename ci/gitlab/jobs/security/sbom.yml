@@ -55,6 +55,8 @@
     when: always
     paths:
       - target/sbom.json
+      - target/sbom.html
+      - target/sbom-*.html
       - target/bom.json
       - target/sbom-*.json
       - target/bom-*.json

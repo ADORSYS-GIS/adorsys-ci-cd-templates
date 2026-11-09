@@ -56,6 +56,16 @@ The referenced SPDX and JSF schemas are also vendored from the official
 CycloneDX specification 1.6 release and checksum-pinned. Schema references are
 resolved locally; validation does not fetch schemas from external websites.
 
+The artifact also contains `target/sbom.html`, a self-contained, offline HTML
+inventory generated only after successful JSON validation. Download and open it
+locally if GitLab does not render HTML artifacts inline. It shows the project,
+version, source branch/commit, component versions, scopes, licenses, package
+identifiers, and linked dependency relationships. It contains no external assets
+or scripts and is not an OWASP vulnerability report; JSON remains authoritative.
+Branch-specific copies are retained as `target/sbom-<branch>.html`, including
+for scheduled multi-branch scans. The canonical HTML report describes the same
+target branch as `target/sbom.json` and has the same 30-day artifact retention.
+
 The official [aggregate goal documentation](https://cyclonedx.github.io/cyclonedx-maven-plugin/makeAggregateBom-mojo.html)
 describes the aggregate reactor output. The pinned
 [2.9.3 release documentation](https://github.com/CycloneDX/cyclonedx-maven-plugin/blob/cyclonedx-maven-plugin-2.9.3/README.md#cyclonedx-schema-support)

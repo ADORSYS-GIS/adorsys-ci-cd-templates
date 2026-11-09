@@ -9,6 +9,7 @@ import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from html.parser import HTMLParser
 from unittest.mock import patch
 from urllib.parse import parse_qs, unquote, urlsplit
 from urllib.error import HTTPError
@@ -90,6 +91,8 @@ class MavenSbomTest(unittest.TestCase):
         self.assertIn('name: "sbom"', template)
         self.assertIn("\n  needs: []\n", template)
         self.assertIn("target/sbom.json", template)
+        self.assertIn("target/sbom.html", template)
+        self.assertIn("target/sbom-*.html", template)
         self.assertIn("when: always", template)
         self.assertIn("makeAggregateBom", (ROOT / "ci/gitlab/scripts/generate-maven-sbom.sh").read_text())
         cyclonedx_alias = (ROOT / "ci/gitlab/jobs/security/cyclonedx-owasp.yml").read_text()
@@ -234,6 +237,8 @@ build_artifact_links "https://git.example.invalid/team/project" "" "" "" "$CYCLO
         target.mkdir()
         (target / "sbom.json").write_text("stale SBOM")
         (target / "bom.json").write_text("stale compatibility BOM")
+        (target / "sbom.html").write_text("stale HTML")
+        (target / "sbom-old.html").write_text("stale branch HTML")
         fake_bin = self.temp_path / "fake-bin"
         fake_bin.mkdir()
         fake_mvn = fake_bin / "mvn"
@@ -243,6 +248,8 @@ build_artifact_links "https://git.example.invalid/team/project" "" "" "" "$CYCLO
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((target / "sbom.json").exists())
         self.assertFalse((target / "bom.json").exists())
+        self.assertFalse((target / "sbom.html").exists())
+        self.assertFalse((target / "sbom-old.html").exists())
 
     def test_scheduled_branches_are_distinct_and_commit_associated(self):
         bare = self.temp_path / "origin.git"
@@ -342,9 +349,16 @@ Path("target/sbom.json").write_text(json.dumps(bom))
             self.assertEqual(properties["ci.branch"], branch)
             self.assertEqual(properties["ci.commit"], commit)
             self.assertTrue((project / f"target/bom-{branch}.json").is_file())
+            report = (project / f"target/sbom-{branch}.html").read_text()
+            self.assertIn(f"<dd>{branch}</dd>", report)
+            self.assertIn(f"<dd>{commit}</dd>", report)
         self.assertEqual(
             (project / "target/sbom.json").read_bytes(),
             (project / "target/sbom-scheduled.json").read_bytes(),
+        )
+        self.assertEqual(
+            (project / "target/sbom.html").read_bytes(),
+            (project / "target/sbom-scheduled.html").read_bytes(),
         )
         remediation = (ROOT / "ci/gitlab/jobs/security/unified-remediation-scheduled.yml").read_text()
         self.assertIn('cp "target/bom-${label}.json" target/bom.json', remediation)
@@ -371,6 +385,9 @@ Path("target/sbom.json").write_text(json.dumps(bom))
         ), patch("sys.argv", command):
             bom_path.write_text(json.dumps(bom))
             runpy.run_path(str(VALIDATOR), run_name="__main__")
+            report_path = bom_path.with_suffix(".html")
+            self.assertIn("Apache-2.0", report_path.read_text())
+            self.assertIn("pkg:maven/example/dependency@1", report_path.read_text())
             for invalid in ("license", "signature"):
                 with self.subTest(invalid=invalid):
                     broken = json.loads(json.dumps(bom))
@@ -379,8 +396,77 @@ Path("target/sbom.json").write_text(json.dumps(bom))
                     else:
                         del broken["signature"]["signers"][0]["value"]
                     bom_path.write_text(json.dumps(broken))
+                    report_path.write_text("stale report")
                     with self.assertRaisesRegex(SystemExit, "not valid against CycloneDX 1.6"):
                         runpy.run_path(str(VALIDATOR), run_name="__main__")
+                    self.assertFalse(report_path.exists())
+            bom_path.write_text(json.dumps(bom))
+            write_text = Path.write_text
+
+            def reject_html_write(path, *args, **kwargs):
+                if path == report_path:
+                    raise OSError("fixture disk error")
+                return write_text(path, *args, **kwargs)
+
+            with patch.object(Path, "write_text", reject_html_write):
+                with self.assertRaisesRegex(SystemExit, "cannot write HTML inventory"):
+                    runpy.run_path(str(VALIDATOR), run_name="__main__")
+            self.assertFalse(report_path.exists())
+
+    def test_html_inventory_escapes_values_and_links_all_dependencies(self):
+        render = runpy.run_path(str(VALIDATOR))["render_html"]
+        hostile = '<script>alert("inventory")</script>&'
+        bom = {
+            "specVersion": "1.6",
+            "metadata": {"component": {
+                "type": "application", "name": hostile, "version": "2.0", "bom-ref": "root",
+            }},
+            "components": [{
+                "type": "library", "group": "example", "name": "library", "version": "1.0",
+                "bom-ref": hostile, "scope": "required", "purl": hostile,
+                "licenses": [{"expression": "MIT OR Apache-2.0"}, {"license": {"name": hostile}}],
+            }],
+            "dependencies": [{"ref": "root", "dependsOn": [hostile]}, {"ref": hostile}],
+        }
+        report = render(bom, hostile, "commit-sha")
+
+        class ReportParser(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.ids = set()
+                self.links = []
+                self.sources = []
+                self.tags = set()
+                self.values = []
+
+            def handle_starttag(self, tag, attrs):
+                self.tags.add(tag)
+                attrs = dict(attrs)
+                if "id" in attrs:
+                    self.ids.add(attrs["id"])
+                if "href" in attrs:
+                    self.links.append(attrs["href"])
+                if "src" in attrs:
+                    self.sources.append(attrs["src"])
+
+            def handle_data(self, data):
+                self.values.append(data)
+
+        parser = ReportParser()
+        parser.feed(report)
+        self.assertNotIn("script", parser.tags)
+        self.assertNotIn("link", parser.tags)
+        self.assertEqual(parser.sources, [])
+        self.assertNotIn(hostile, report)
+        self.assertIn(hostile, parser.values)
+        self.assertTrue(parser.links)
+        for link in parser.links:
+            self.assertTrue(link.startswith("#"))
+            self.assertIn(link[1:], parser.ids)
+        self.assertIn("MIT OR Apache-2.0", report)
+        self.assertIn("<dd>commit-sha</dd>", report)
+        self.assertIn("<dd>1</dd>", report)
+        self.assertIn("No dependencies recorded", report)
 
     def test_validator_rejects_missing_or_modified_companion_schema(self):
         project = self.copy_fixture("single")

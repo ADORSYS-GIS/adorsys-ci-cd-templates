@@ -28,7 +28,8 @@ printf '%s  %s\n' "$SCHEMA_SHA256" "$SCHEMA" | sha256sum --check --status || {
 
 mkdir -p target "$STAGING_DIR"
 rm -f "$STAGING_DIR"/*.json target/sbom.json target/bom.json \
-  target/sbom-*.json target/bom-*.json target/sbom-manifest.json
+  target/sbom-*.json target/bom-*.json target/sbom-manifest.json \
+  "$STAGING_DIR"/*.html target/sbom.html target/sbom-*.html
 
 TARGET_BRANCH="${CI_COMMIT_BRANCH:-${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME:-${CI_COMMIT_REF_NAME:-$(git branch --show-current)}}}"
 [[ -n "$TARGET_BRANCH" ]] || {
@@ -78,7 +79,7 @@ run_branch() {
     mkdir -p "$maven_repo" || return 1
   fi
 
-  rm -f target/sbom.json target/bom.json || return 1
+  rm -f target/sbom.json target/bom.json target/sbom.html || return 1
   if ! mvn -B -ntp -nsu \
     "-Dmaven.repo.local=${maven_repo}" \
     "${MAVEN_SETTINGS_ARGS[@]}" \
@@ -106,10 +107,11 @@ run_branch() {
   fi
 
   if ! python3 "$VALIDATOR" target/sbom.json "$SCHEMA" pom.xml "$branch" "$commit"; then
-    echo "ERROR: CycloneDX output validation failed for branch $branch ($commit)." >&2
+    echo "ERROR: CycloneDX validation or HTML inventory generation failed for branch $branch ($commit)." >&2
     return 1
   fi
 
+  cp target/sbom.html "$STAGING_DIR/sbom-${label}.html" || return 1
   cp target/sbom.json "$STAGING_DIR/sbom-${label}.json" || return 1
   cp target/sbom.json "$STAGING_DIR/bom-${label}.json" || return 1
   if ! python3 - "$STAGING_DIR/manifest.json" "$branch" "$commit" "$label" <<'PY'
@@ -135,14 +137,15 @@ done
 
 git checkout -f "$TARGET_COMMIT" || OVERALL_EXIT=1
 mkdir -p target
-rm -f target/sbom.json target/bom.json target/sbom-manifest.json
-for artifact in "$STAGING_DIR"/*.json; do
+rm -f target/sbom.json target/bom.json target/sbom-manifest.json target/sbom.html target/sbom-*.html
+for artifact in "$STAGING_DIR"/*.json "$STAGING_DIR"/*.html; do
   [[ -f "$artifact" ]] || continue
   cp "$artifact" "target/$(basename "$artifact")"
 done
 if [[ -f "$STAGING_DIR/sbom-${TARGET_LABEL}.json" ]]; then
   cp "$STAGING_DIR/sbom-${TARGET_LABEL}.json" target/sbom.json
   cp "$STAGING_DIR/bom-${TARGET_LABEL}.json" target/bom.json
+  cp "$STAGING_DIR/sbom-${TARGET_LABEL}.html" target/sbom.html
 fi
 if [[ -f "$STAGING_DIR/manifest.json" ]]; then
   cp "$STAGING_DIR/manifest.json" target/sbom-manifest.json
