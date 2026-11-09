@@ -1,0 +1,32 @@
+# Maven SBOM generation is deliberately independent of OWASP Dependency-Check.
+.maven-sbom:
+  image: "${JAVA_MAVEN_IMAGE}"
+  stage: "Security"
+  before_script:
+    - >
+      test -n "${JAVA_MAVEN_IMAGE}" ||
+      (echo "JAVA_MAVEN_IMAGE is required" && exit 1)
+    - >
+      apt-get update &&
+      apt-get install -yq git python3 python3-jsonschema
+    - java -version
+    - mvn -version
+  script:
+    - bash ci/gitlab/scripts/generate-maven-sbom.sh
+  timeout: 4h
+  allow_failure: false
+  artifacts:
+    name: "sbom"
+    when: always
+    paths:
+      - target/sbom.json
+      - target/bom.json
+      - target/sbom-*.json
+      - target/bom-*.json
+      - target/sbom-manifest.json
+    expire_in: "30 days"
+  cache:
+    key: "maven-cache-$CI_COMMIT_REF_SLUG"
+    paths:
+      - "${MAVEN_REPO_PATH:-.m2/repository}"
+    policy: pull-push

@@ -122,6 +122,7 @@ OWASP_JOB_ID=""
 TRIVY_FS_JOB_ID="" TRIVY_FS_JOB_NAME=""
 TRIVY_DF_JOB_ID="" TRIVY_DF_JOB_NAME=""
 CYCLONEDX_JOB_ID=""
+CYCLONEDX_JOB_NAME=""
 if [[ -n "$CI_PROJECT_ID" && -n "$CI_PIPELINE_ID" && -n "$GITLAB_TOKEN" ]]; then
     JOBS_JSON=$(curl -s --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
         "${GITLAB_API}/projects/${CI_PROJECT_ID}/pipelines/${CI_PIPELINE_ID}/jobs?per_page=100" 2>/dev/null || echo "[]")
@@ -157,11 +158,19 @@ if [[ -n "$CI_PROJECT_ID" && -n "$CI_PIPELINE_ID" && -n "$GITLAB_TOKEN" ]]; then
          // ([.[] | select(.name | test("trivy.*dockerfile|trivy.*config|trivy.*docker"; "i"))] | .[0])
         ).name // empty' 2>/dev/null || true)
     CYCLONEDX_JOB_ID=$(echo "$JOBS_JSON" | jq -r --arg b "$_B" '
-        (([.[] | select(.name | test("cyclonedx.*scheduled|scheduled.*cyclonedx"; "i"))
+        (([.[] | select(.name == "sbom")] | .[0])
+         // ([.[] | select(.name | test("cyclonedx.*scheduled|scheduled.*cyclonedx"; "i"))
                 | select(.name | ascii_downcase | contains($b))] | .[0])
          // ([.[] | select(.name | test("cyclonedx.*scheduled|scheduled.*cyclonedx"; "i"))] | .[0])
          // ([.[] | select(.name | test("cyclonedx|cyclone"; "i"))] | .[0])
         ).id // empty' 2>/dev/null || true)
+    CYCLONEDX_JOB_NAME=$(echo "$JOBS_JSON" | jq -r --arg b "$_B" '
+        (([.[] | select(.name == "sbom")] | .[0])
+         // ([.[] | select(.name | test("cyclonedx.*scheduled|scheduled.*cyclonedx"; "i"))
+                | select(.name | ascii_downcase | contains($b))] | .[0])
+         // ([.[] | select(.name | test("cyclonedx.*scheduled|scheduled.*cyclonedx"; "i"))] | .[0])
+         // ([.[] | select(.name | test("cyclonedx|cyclone"; "i"))] | .[0])
+        ).name // empty' 2>/dev/null || true)
 fi
 
 # Determine trivy artifact filenames from job names
@@ -187,7 +196,13 @@ if [[ -n "$TRIVY_DF_JOB_ID" ]]; then
     MR_DESCRIPTION+="| Trivy Dockerfile (JSON) | [Download](${PAGES_JOBS_BASE}/${TRIVY_DF_JOB_ID}/artifacts/${_DF_FILE}) |\n"
 fi
 if [[ -n "$CYCLONEDX_JOB_ID" ]]; then
-    MR_DESCRIPTION+="| CycloneDX BOM (JSON) | [Download](${PAGES_JOBS_BASE}/${CYCLONEDX_JOB_ID}/artifacts/target/bom.json) |\n"
+    BOM_FILE="target/bom.json"
+    if [[ "$CYCLONEDX_JOB_NAME" == "sbom" ]]; then
+        BOM_LABEL="${TARGET_BRANCH//\//-}"
+        BOM_LABEL=$(printf '%s' "$BOM_LABEL" | sed 's/[^A-Za-z0-9._-]/-/g')
+        BOM_FILE="target/bom-${BOM_LABEL}.json"
+    fi
+    MR_DESCRIPTION+="| CycloneDX BOM (JSON) | [Download](${PAGES_JOBS_BASE}/${CYCLONEDX_JOB_ID}/artifacts/${BOM_FILE}) |\n"
 fi
 MR_DESCRIPTION+="| Pipeline Overview | [View](${PIPELINE_URL}) |\n\n"
 
