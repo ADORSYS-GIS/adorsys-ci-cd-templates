@@ -131,16 +131,18 @@ All GitHub SAST workflows accept `runner` and `working-directory` (repo-relative
 | `sast-shell.yml`                 | ShellCheck               | none                       |
 | `sast-powershell.yml`            | PSScriptAnalyzer         | none                       |
 | `sast-iac.yml`                   | Checkov (Terraform/Helm) | none                       |
-| `secret-scan.yml`                | Gitleaks (full history)  | none                       |
+| `secret-scan.yml`                | Gitleaks                 | none                       |
 
 ### Secret scanning (Gitleaks)
 
-The `secret-scan.yml` reusable workflow runs Gitleaks over the **full git history**
-(`--log-opts=--all` by default) on `push` and `pull_request`, uploads a SARIF report as a
-`gitleaks-report` artifact, and gates on the same protected-branch policy as the other
-security workflows (hard-fail on protected branches, advisory on feature branches). The
-GitLab `.gitleaks` job provides the equivalent full-history scan (with `GIT_DEPTH: 0` to
-ensure the full history is cloned).
+The `secret-scan.yml` reusable workflow runs Gitleaks on `push` and `pull_request`, uploads
+a SARIF report as a `gitleaks-report` artifact, and gates on the same protected-branch
+policy as the other security workflows (hard-fail on protected branches, advisory on feature
+branches). GitLab consumers can use the `.gitleaks` job for the same current-state scan.
+
+By default the workflow scans the full git history (`history: true`, `--log-opts=--all`).
+Set `history: false` to scan only the current working tree (`--no-git`), which does not
+fail on secrets that were removed from history.
 
 ```yaml
 jobs:
@@ -149,9 +151,15 @@ jobs:
     with:
       runner: ubuntu-latest
       working-directory: "."
+      history: false
     secrets:
       NOTIFY_WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
 ```
+
+For a CI gate that never blocks on historical secrets, run this job with `history: false`,
+and schedule a separate full-history scan (`history: true`) that is advisory only. Add the
+scheduled job to a caller workflow with a `schedule` trigger and `continue-on-error: true`
+so it reports historical findings without failing builds.
 
 The optional `NOTIFY_WEBHOOK_URL` secret posts a notification (Slack-compatible JSON)
 whenever Gitleaks reports a finding; omit it to skip notifications. Point it at any channel
