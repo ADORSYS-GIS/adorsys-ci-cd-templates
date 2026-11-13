@@ -1,0 +1,69 @@
+# Maven SBOM generation is deliberately independent of OWASP Dependency-Check.
+.maven-sbom:
+  image: "${JAVA_MAVEN_IMAGE}"
+  stage: "Security"
+  needs: []
+  before_script:
+    - >
+      test -n "${JAVA_MAVEN_IMAGE}" ||
+      (echo "JAVA_MAVEN_IMAGE is required" && exit 1)
+    - >
+      apt-get update &&
+      apt-get install -yq git python3 python3-jsonschema
+    - java -version
+    - mvn -version
+  script:
+    - |
+      set -eu
+      SBOM_HELPERS_DIR="$(mktemp -d)"
+      export SBOM_HELPERS_DIR
+      trap 'rm -rf "$SBOM_HELPERS_DIR"' EXIT
+      python3 - <<'PY'
+      import os
+      from pathlib import Path
+      from urllib.parse import quote, urlencode
+      from urllib.request import Request, urlopen
+
+      project = quote(os.environ["ADORSYS_CI_TEMPLATES_PROJECT"], safe="")
+      ref = os.environ["ADORSYS_CI_TEMPLATES_REF"]
+      if not project or not ref:
+          raise SystemExit("SBOM: template project and ref must not be empty")
+      base = os.environ["CI_API_V4_URL"] + "/projects/" + project + "/repository/files/"
+      headers = (
+          {"PRIVATE-TOKEN": os.environ["GITLAB_TOKEN"]}
+          if os.environ.get("GITLAB_TOKEN")
+          else {"JOB-TOKEN": os.environ["CI_JOB_TOKEN"]}
+      )
+      for path in (
+          "ci/gitlab/scripts/generate-maven-sbom.sh",
+          "ci/gitlab/scripts/validate-maven-sbom.py",
+          "ci/gitlab/schemas/cyclonedx-bom-1.6.schema.json",
+          "ci/gitlab/schemas/spdx.schema.json",
+          "ci/gitlab/schemas/jsf-0.82.schema.json",
+      ):
+          destination = Path(os.environ["SBOM_HELPERS_DIR"]) / path
+          destination.parent.mkdir(parents=True, exist_ok=True)
+          request = Request(base + quote(path, safe="") + "/raw?" + urlencode({"ref": ref}), headers=headers)
+          with urlopen(request, timeout=60) as response:
+              destination.write_bytes(response.read())
+      PY
+      bash "$SBOM_HELPERS_DIR/ci/gitlab/scripts/generate-maven-sbom.sh"
+  timeout: 4h
+  allow_failure: false
+  artifacts:
+    name: "sbom"
+    when: always
+    paths:
+      - target/sbom.json
+      - target/sbom.html
+      - target/sbom-*.html
+      - target/bom.json
+      - target/sbom-*.json
+      - target/bom-*.json
+      - target/sbom-manifest.json
+    expire_in: "30 days"
+  cache:
+    key: "maven-cache-$CI_COMMIT_REF_SLUG"
+    paths:
+      - "${MAVEN_REPO_PATH:-.m2/repository}"
+    policy: pull-push
