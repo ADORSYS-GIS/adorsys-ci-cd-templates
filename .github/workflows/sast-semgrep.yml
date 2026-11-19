@@ -58,6 +58,24 @@ jobs:
             FAIL_LEVEL="error"
           fi
           echo "::group::reviewdog ($REPORTER, fail-level=$FAIL_LEVEL)"
+          # reviewdog exits 1 both when it finds issues at/above fail-level AND
+          # when it fails to post results to GitHub (transient 404/500 from the
+          # check-runs API). Only the former should fail the job; a posting
+          # failure is advisory. Distinguish the two from the output.
+          set +e
           cat "$SARIF" | reviewdog -f=sarif -name="semgrep" \
-            -reporter="$REPORTER" -filter-mode=file -fail-level="$FAIL_LEVEL"
+            -reporter="$REPORTER" -filter-mode=file -fail-level="$FAIL_LEVEL" 2>&1 | tee /tmp/reviewdog.log
+          RC=${PIPESTATUS[1]}
+          set -e
+          if [ $RC -ne 0 ]; then
+            if grep -qE "found at least one issue" /tmp/reviewdog.log; then
+              echo "::error::reviewdog found issues at or above fail-level"
+              exit $RC
+            fi
+            if grep -qE "failed to (post|create)|404 Not Found|: 500" /tmp/reviewdog.log; then
+              echo "::warning::reviewdog could not post results (GitHub API error); treating as advisory"
+              exit 0
+            fi
+            exit $RC
+          fi
           echo "::endgroup::"
