@@ -64,22 +64,31 @@ jobs:
           echo "::group::reviewdog ($REPORTER, fail-level=$FAIL_LEVEL)"
           # reviewdog exits 1 both when it finds issues at/above fail-level AND
           # when it fails to post results to GitHub (transient 404/500 from the
-          # check-runs API). Only the former should fail the job; a posting
-          # failure is advisory. Distinguish the two from the output.
+          # check-runs API). Retry posting on the transient API errors so the
+          # findings actually get reported; only fail the job on real findings.
           set +e
-          cat "$SARIF" | reviewdog -f=sarif -name="gosec" \
-            -reporter="$REPORTER" -filter-mode=file -fail-level="$FAIL_LEVEL" 2>&1 | tee /tmp/reviewdog.log
-          RC=${PIPESTATUS[1]}
+          RC=1
+          for attempt in 1 2 3; do
+            cat "$SARIF" | reviewdog -f=sarif -name="gosec" \
+              -reporter="$REPORTER" -filter-mode=file -fail-level="$FAIL_LEVEL" 2>&1 | tee /tmp/reviewdog.log
+            RC=${PIPESTATUS[1]}
+            if [ $RC -eq 0 ]; then
+              break
+            fi
+            # Real finding - retrying won't change it, fail immediately.
+            if grep -qE "found at least one issue" /tmp/reviewdog.log; then
+              break
+            fi
+            echo "::warning::reviewdog posting failed (attempt $attempt/3); retrying..."
+            sleep 5
+          done
           set -e
           if [ $RC -ne 0 ]; then
             if grep -qE "found at least one issue" /tmp/reviewdog.log; then
               echo "::error::reviewdog found issues at or above fail-level"
               exit $RC
             fi
-            if grep -qE "failed to (post|create)|404 Not Found|: 500" /tmp/reviewdog.log; then
-              echo "::warning::reviewdog could not post results (GitHub API error); treating as advisory"
-              exit 0
-            fi
-            exit $RC
+            echo "::warning::reviewdog could not post results after retries (GitHub API error); treating as advisory"
+            exit 0
           fi
           echo "::endgroup::"
