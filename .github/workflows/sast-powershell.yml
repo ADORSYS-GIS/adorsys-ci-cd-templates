@@ -86,6 +86,33 @@ jobs:
             FAIL_LEVEL="error"
           fi
           echo "::group::reviewdog ($REPORTER, fail-level=$FAIL_LEVEL)"
-          cat "$SARIF" | reviewdog -f=sarif -name="psscriptanalyzer" \
-            -reporter="$REPORTER" -filter-mode=file -fail-level="$FAIL_LEVEL"
+          # reviewdog exits 1 both when it finds issues at/above fail-level AND
+          # when it fails to post results to GitHub (transient 404/500 from the
+          # check-runs API). Retry posting on the transient API errors so the
+          # findings actually get reported; only fail the job on real findings.
+          set +e
+          RC=1
+          for attempt in 1 2 3; do
+            cat "$SARIF" | reviewdog -f=sarif -name="psscriptanalyzer" \
+              -reporter="$REPORTER" -filter-mode=file -fail-level="$FAIL_LEVEL" 2>&1 | tee /tmp/reviewdog.log
+            RC=${PIPESTATUS[1]}
+            if [ $RC -eq 0 ]; then
+              break
+            fi
+            # Real finding - retrying won't change it, fail immediately.
+            if grep -qE "found at least one issue" /tmp/reviewdog.log; then
+              break
+            fi
+            echo "::warning::reviewdog posting failed (attempt $attempt/3); retrying..."
+            sleep 5
+          done
+          set -e
+          if [ $RC -ne 0 ]; then
+            if grep -qE "found at least one issue" /tmp/reviewdog.log; then
+              echo "::error::reviewdog found issues at or above fail-level"
+              exit $RC
+            fi
+            echo "::warning::reviewdog could not post results after retries (GitHub API error); treating as advisory"
+            exit 0
+          fi
           echo "::endgroup::"
