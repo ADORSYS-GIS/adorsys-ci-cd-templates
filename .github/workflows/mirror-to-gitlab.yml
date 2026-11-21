@@ -1,13 +1,15 @@
 name: Mirror to GitLab
 
 # GitHub is the source of truth for this repo. This workflow pushes main and
-# all tags to the GitLab project as a read-only mirror. Never push directly
+# the SBOM test branch and all tags to the GitLab project as a read-only mirror.
+# Never push directly
 # to the GitLab remote - it will be overwritten/pruned on the next run.
 
 on:
   push:
     branches:
       - main
+      - feature/improve-sbom-in-owasp-job
     tags:
       - "**"
   workflow_dispatch: {}
@@ -37,5 +39,9 @@ jobs:
         run: |
           git remote remove gitlab 2>/dev/null || true
           git remote add gitlab "https://oauth2:${GITLAB_TOKEN}@${GITLAB_SYNC_URL}"
-          git push gitlab 'HEAD:refs/heads/main'
+          if [ "$GITHUB_REF_TYPE" = "branch" ]; then
+            git push gitlab "HEAD:refs/heads/${GITHUB_REF_NAME}"
+          else
+            git push gitlab 'refs/remotes/origin/main:refs/heads/main'
+          fi
           git push --prune gitlab '+refs/tags/*:refs/tags/*'

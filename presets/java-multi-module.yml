@@ -11,6 +11,7 @@ include:
   - local: 'ci/gitlab/jobs/lint/dockerfile-lint.yml'
   - local: 'ci/gitlab/jobs/lint/pmd-cpd.yml'
   - local: 'ci/gitlab/jobs/lint/yaml-json-xml-lint.yml'
+  - local: 'ci/gitlab/jobs/security/sbom.yml'
   - local: 'ci/gitlab/jobs/security/owasp-dependency-check.yml'
   - local: 'ci/gitlab/jobs/security/renovate.yml'
   - local: 'ci/gitlab/jobs/build/java-maven.yml'
@@ -59,6 +60,13 @@ Lint (PMD/CPD):
 Security (OWASP Dependency Check):
   extends: .owasp-dependency-check
   rules: !reference [.pipeline-always-except-schedules, rules]
+
+sbom:
+  extends: .maven-sbom
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && $SCHEDULE_TYPE == "security-scan"'
+      when: always
+    - !reference [.pipeline-always-except-schedules, rules]
 
 # ==================== COMPILE STAGE ====================
 

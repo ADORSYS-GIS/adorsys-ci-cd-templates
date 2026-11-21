@@ -18,6 +18,7 @@
       run_remediation() {
         local branch="$1"
         local label="${branch//\//-}"
+        label="$(printf '%s' "$label" | sed 's/[^A-Za-z0-9._-]/-/g')"
         echo "=== Running remediation for branch: $branch (label: $label) ==="
 
         # Force-clean checkout; discards pom.xml modifications left by the

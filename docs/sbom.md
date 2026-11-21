@@ -1,32 +1,115 @@
 # SBOM Scans
 
 A Software Bill of Materials (SBOM) is a machine-readable inventory of the
-components that make up a deliverable. This set of templates generates a
-CycloneDX SBOM from the repository contents (or from a container image) so it
-can be published, audited, or compared against the GitHub Dependency Graph
-baseline.
+components that make up a deliverable. These templates provide CycloneDX
+generation for resolved Maven dependencies and for Trivy filesystem or
+container-image scans. The generated inputs differ by ecosystem and platform.
 
 GitHub generates its own SPDX SBOM from the dependency graph when the feature
 is enabled, but only for the ecosystems it understands and only from committed
-manifests. The generated SBOM below is the source of truth: it scans the actual
-repository contents, covers ecosystems the dependency graph does not parse
-(Helm, container images, shell), and can be attached to releases or gated in CI.
+manifests. The GitLab Maven job below describes the resolved Maven project
+graph. The GitHub reusable workflow continues to use Trivy for filesystem and
+container-image scans; it is not changed by the Maven job.
 
 ## GitLab
 
-Java / Maven projects include the existing CycloneDX job:
+The `java-backend` and `java-multi-module` presets run a dedicated job named
+`sbom`, independently from OWASP Dependency-Check. To add the SBOM template to
+another Java/Maven pipeline:
 
 ```yaml
 include:
   - project: "${ADORSYS_CI_TEMPLATES_PROJECT}"
     ref: "${ADORSYS_CI_TEMPLATES_REF}"
     file:
-      - "ci/gitlab/jobs/security/cyclonedx-owasp.yml"
+      - "ci/gitlab/jobs/security/sbom.yml"
+
+sbom:
+  extends: .maven-sbom
 ```
 
-This requires the `JAVA_MAVEN_IMAGE` variable and produces `target/bom.json` in
-CycloneDX format using the CycloneDX Maven plugin, alongside the OWASP
-Dependency-Check gate.
+The presets' OWASP job remains separate and keeps its existing CVSS threshold,
+soft-failure behavior, NVD cache, and unavailable-NVD fallback. The strict
+Dependency-Check variants remain pipeline-blocking; neither scanner outcome
+can convert an SBOM generation or validation failure into success.
+
+The job has `needs: []`: when its rules include it, it can start as soon as a
+runner is available, without waiting for earlier stages. It consumes no
+upstream job artifacts and rebuilds its own Maven reactor, so Build, lint,
+test, E2E, and OWASP jobs are not prerequisites.
+
+The job requires `JAVA_MAVEN_IMAGE`, `ADORSYS_CI_TEMPLATES_PROJECT`, and
+`ADORSYS_CI_TEMPLATES_REF`. Set the template ref to the same ref as the YAML
+include. It downloads its helpers and schema via `CI_API_V4_URL`, using
+`GITLAB_TOKEN` when configured or `CI_JOB_TOKEN` otherwise. The token must have
+read access to the templates repository (including any cross-project job-token
+allowlist required by your GitLab instance).
+
+The job rebuilds the checked-out source and runs
+the exact Maven goal
+`org.cyclonedx:cyclonedx-maven-plugin:2.9.3:makeAggregateBom`. It writes
+`target/sbom.json`, validates it against the vendored, checksum-pinned
+CycloneDX 1.6 JSON schema, and preserves `target/bom.json` as a compatibility
+copy for remediation consumers. Both files are uploaded in the artifact named
+`sbom`; the artifact is retained for 30 days, including on job failure.
+The referenced SPDX and JSF schemas are also vendored from the official
+CycloneDX specification 1.6 release and checksum-pinned. Schema references are
+resolved locally; validation does not fetch schemas from external websites.
+
+The artifact also contains `target/sbom.html`, a self-contained, offline HTML
+inventory generated only after successful JSON validation. Download and open it
+locally if GitLab does not render HTML artifacts inline. It shows the project,
+version, source branch/commit, component versions, scopes, licenses, package
+identifiers, and linked dependency relationships. It contains no external assets
+or scripts and is not an OWASP vulnerability report; JSON remains authoritative.
+Branch-specific copies are retained as `target/sbom-<branch>.html`, including
+for scheduled multi-branch scans. The canonical HTML report describes the same
+target branch as `target/sbom.json` and has the same 30-day artifact retention.
+
+The official [aggregate goal documentation](https://cyclonedx.github.io/cyclonedx-maven-plugin/makeAggregateBom-mojo.html)
+describes the aggregate reactor output. The pinned
+[2.9.3 release documentation](https://github.com/CycloneDX/cyclonedx-maven-plugin/blob/cyclonedx-maven-plugin-2.9.3/README.md#cyclonedx-schema-support)
+maps the exact released version to CycloneDX 1.6; 1.7 is not selected because
+the stable release line documented here does not support it.
+The goal includes compile, provided, runtime, and system scopes (including
+transitives and dependency relationships), excludes test scope, and disables
+per-module BOM files so a reactor produces one aggregate BOM. Single-module
+projects receive the equivalent complete project BOM. The validator rejects
+missing, empty, malformed, schema-invalid, unrelated, or relationship-free
+output and confirms that every reactor module is represented.
+
+The job rebuilds from the current checkout rather than reusing Build artifacts,
+and does not share the OWASP NVD cache or fallback path. It uses
+`MAVEN_SETTINGS_PATH` when set and normal Maven configuration such as
+`.mvn/maven.config` (which applies the same Maven CLI profiles to both build
+and BOM generation). Set `MAVEN_SETTINGS_PATH` at project/group scope when the
+consuming build uses a non-default settings file; ensure any profiles used by
+the consuming build are also activated through the shared Maven configuration.
+Do not describe the BOM as a released binary's SBOM when the release uses a
+different revision or dependency configuration. The BOM metadata records the
+source branch and full commit SHA.
+
+The standard preset rules run this job in non-scheduled pipelines. A schedule
+with `SCHEDULE_TYPE=security-scan` also runs the job and scans the schedule's
+branch, `develop`, and the latest even-numbered `support-N.x` branch (where
+present). Each branch/revision is kept separately as
+`target/sbom-<branch>.json` and `target/bom-<branch>.json`, with
+`target/sbom-manifest.json` mapping each branch to its full commit. The
+unqualified `target/sbom.json` and compatibility `target/bom.json` represent
+the schedule's target branch. Each scheduled branch/revision uses an isolated
+Maven local repository so reactor artifacts from one branch cannot satisfy
+another branch's dependency resolution. Sanitized branch filenames support
+the existing scheduled remediation path.
+
+These are temporary CI artifacts, not durable release publications. The
+templates do not currently publish SBOMs alongside Maven release packages or
+associate them with a released package digest. Projects that require durable
+release SBOMs must publish through their existing configurable release/package
+mechanism, attaching the SBOM to the exact release version and recording the
+source commit and artifact digest. Do not rely on the 30-day job artifact as
+the sole release copy. The former `cyclonedx-owasp*.yml` templates remain
+scanner-only compatibility aliases; include the dedicated `sbom.yml` for
+generation.
 
 ## GitHub
 
