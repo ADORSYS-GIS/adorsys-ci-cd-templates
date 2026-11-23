@@ -5,7 +5,7 @@
 resolve_artifact_links() {
     local GITLAB_API="$1" TOKEN="$2" PROJECT_ID="$3" PIPELINE_ID="$4" BASE_BRANCH="${5:-develop}"
     OWASP_JOB_ID="" TRIVY_FS_JOB_ID="" TRIVY_DF_JOB_ID="" CYCLONEDX_JOB_ID=""
-    TRIVY_FS_JOB_NAME="" TRIVY_DF_JOB_NAME=""
+    TRIVY_FS_JOB_NAME="" TRIVY_DF_JOB_NAME="" CYCLONEDX_JOB_NAME=""
     [[ -z "$PROJECT_ID" || -z "$PIPELINE_ID" || -z "$TOKEN" ]] && return 0
     local JOBS_JSON
     JOBS_JSON=$(curl -s --header "PRIVATE-TOKEN: $TOKEN" \
@@ -43,16 +43,25 @@ resolve_artifact_links() {
          // ([.[] | select(.name | test("trivy.*dockerfile|trivy.*config|trivy.*docker"; "i"))] | .[0])
         ).name // empty' 2>/dev/null || true)
     CYCLONEDX_JOB_ID=$(echo "$JOBS_JSON" | jq -r --arg b "$BASE_BRANCH" '
-        (([.[] | select(.name | test("cyclonedx.*scheduled|scheduled.*cyclonedx"; "i"))
+        (([.[] | select(.name == "sbom")] | .[0])
+         // ([.[] | select(.name | test("cyclonedx.*scheduled|scheduled.*cyclonedx"; "i"))
                 | select(.name | ascii_downcase | contains($b))] | .[0])
          // ([.[] | select(.name | test("cyclonedx.*scheduled|scheduled.*cyclonedx"; "i"))] | .[0])
          // ([.[] | select(.name | test("cyclonedx|cyclone"; "i"))] | .[0])
         ).id // empty' 2>/dev/null || true)
+    CYCLONEDX_JOB_NAME=$(echo "$JOBS_JSON" | jq -r --arg b "$BASE_BRANCH" '
+        (([.[] | select(.name == "sbom")] | .[0])
+         // ([.[] | select(.name | test("cyclonedx.*scheduled|scheduled.*cyclonedx"; "i"))
+                | select(.name | ascii_downcase | contains($b))] | .[0])
+         // ([.[] | select(.name | test("cyclonedx.*scheduled|scheduled.*cyclonedx"; "i"))] | .[0])
+         // ([.[] | select(.name | test("cyclonedx|cyclone"; "i"))] | .[0])
+        ).name // empty' 2>/dev/null || true)
 }
 
 build_artifact_links() {
     local PROJECT_URL="$1" OWASP_JOB_ID="$2" TRIVY_FS_JOB_ID="$3" TRIVY_DF_JOB_ID="$4" CYCLONEDX_JOB_ID="$5" PIPELINE_ID="$6"
     local TRIVY_FS_JOB_NAME="${7:-}" TRIVY_DF_JOB_NAME="${8:-}"
+    local BASE_BRANCH="${9:-}" CYCLONEDX_JOB_NAME="${10:-}"
     # Compute GitLab Pages artifact base URL:
     #   https://git.example.com/group/subgroup/foo  ->  https://group.pages.example.com/-/subgroup/foo/-/jobs
     local _HOST _DOMAIN _PROJ_PATH _NS _SUBPATH _PAGES_BASE
@@ -80,7 +89,13 @@ build_artifact_links() {
         LINKS+="| Trivy Dockerfile (JSON) | [Download](${_PAGES_BASE}/${TRIVY_DF_JOB_ID}/artifacts/${_DF_FILE}) |\n"
     fi
     if [[ -n "$CYCLONEDX_JOB_ID" ]]; then
-        LINKS+="| CycloneDX BOM (JSON) | [Download](${_PAGES_BASE}/${CYCLONEDX_JOB_ID}/artifacts/target/bom.json) |\n"
+        local _BOM_FILE="target/bom.json"
+        if [[ "$CYCLONEDX_JOB_NAME" == "sbom" && -n "$BASE_BRANCH" ]]; then
+            local _BOM_LABEL="${BASE_BRANCH//\//-}"
+            _BOM_LABEL=$(printf '%s' "$_BOM_LABEL" | sed 's/[^A-Za-z0-9._-]/-/g')
+            _BOM_FILE="target/bom-${_BOM_LABEL}.json"
+        fi
+        LINKS+="| CycloneDX BOM (JSON) | [Download](${_PAGES_BASE}/${CYCLONEDX_JOB_ID}/artifacts/${_BOM_FILE}) |\n"
     fi
     LINKS+="| Pipeline Overview | [View](${PROJECT_URL}/-/pipelines/${PIPELINE_ID}) |\n"
     echo "$LINKS"
