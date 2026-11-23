@@ -15,30 +15,37 @@
     - apk add --no-cache curl jq bash
   script:
     - |
+      set -eu
       : "${ADORSYS_CI_TEMPLATES_PROJECT:?Set ADORSYS_CI_TEMPLATES_PROJECT as a project/group CI/CD variable}"
-      PROJECT_ENC=$(printf '%s' "$ADORSYS_CI_TEMPLATES_PROJECT" | sed 's#/#%2F#g')
-      # Resolve the templates ref: prefer the explicit variable, then latest tag, then master.
-      if [ -z "${GITLAB_CI_TEMPLATES_REF:-}" ]; then
-        GITLAB_CI_TEMPLATES_REF=$(curl -sL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
-          "${CI_API_V4_URL}/projects/${PROJECT_ENC}/repository/tags?order_by=version&sort=desc&per_page=1" \
-          | jq -r '.[0].name // empty' 2>/dev/null || true)
+      PROJECT_ENC=$(jq -rn --arg value "$ADORSYS_CI_TEMPLATES_PROJECT" '$value | @uri')
+      if [ -n "${GITLAB_TOKEN:-}" ]; then
+        AUTH_HEADER="PRIVATE-TOKEN: ${GITLAB_TOKEN}"
+      else
+        : "${CI_JOB_TOKEN:?Set CI_JOB_TOKEN or GITLAB_TOKEN to access the templates project}"
+        AUTH_HEADER="JOB-TOKEN: ${CI_JOB_TOKEN}"
       fi
-      TEMPLATES_REF="${GITLAB_CI_TEMPLATES_REF:-master}"
+      TEMPLATES_REF="${GITLAB_CI_TEMPLATES_REF:-${ADORSYS_CI_TEMPLATES_REF:-}}"
+      if [ -z "$TEMPLATES_REF" ]; then
+        TAGS=$(curl --fail --silent --show-error --location --header "$AUTH_HEADER" \
+          "${CI_API_V4_URL}/projects/${PROJECT_ENC}/repository/tags?order_by=version&sort=desc&per_page=1") || {
+          echo "ERROR: Cannot read template tags. Check token access to the templates project." >&2
+          exit 1
+        }
+        TEMPLATES_REF=$(printf '%s' "$TAGS" | jq -er '.[0].name | select(type == "string" and length > 0)') || {
+          echo "ERROR: No template tag found; set GITLAB_CI_TEMPLATES_REF or ADORSYS_CI_TEMPLATES_REF." >&2
+          exit 1
+        }
+      fi
       echo "notify-remediation ref: ${TEMPLATES_REF}"
-      SCRIPT_URL="${CI_API_V4_URL}/projects/${PROJECT_ENC}/repository/files/cd%2Fgitlab%2Fscripts%2Fnotify-remediation.sh/raw?ref=${TEMPLATES_REF}"
-      curl -sL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" "${SCRIPT_URL}" -o /tmp/notify-remediation.sh
-      # Detect API error responses (GitLab returns JSON on 404, not a shell script)
+      SCRIPT_URL="${CI_API_V4_URL}/projects/${PROJECT_ENC}/repository/files/cd%2Fgitlab%2Fscripts%2Fnotify-remediation.sh/raw"
+      curl --fail --silent --show-error --location --header "$AUTH_HEADER" --get \
+        --data-urlencode "ref=${TEMPLATES_REF}" "$SCRIPT_URL" -o /tmp/notify-remediation.sh || {
+          echo "ERROR: Cannot download notify-remediation.sh. Check the template ref and token access." >&2
+          exit 1
+        }
       if ! head -1 /tmp/notify-remediation.sh | grep -q '^#!'; then
-        echo "WARNING: notify-remediation.sh download returned unexpected content (ref=${TEMPLATES_REF}):"
-        head -3 /tmp/notify-remediation.sh
-        echo "Skipping Slack notification."
-        exit 0
+        echo "ERROR: notify-remediation.sh returned unexpected content (ref=${TEMPLATES_REF})." >&2
+        exit 1
       fi
       chmod +x /tmp/notify-remediation.sh
       /tmp/notify-remediation.sh
-  artifacts:
-    when: always
-    paths:
-      - security-reports/summary.json
-      - security-reports/.fixes-applied
-    expire_in: "7 days"

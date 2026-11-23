@@ -14,23 +14,38 @@ fi
 PROJECT="${CI_PROJECT_PATH:-${CI_PROJECT_NAME:-unknown}}"
 BRANCH="${SECURITY_BASE_BRANCH:-develop}"
 TS=$(date -u +"%Y-%m-%d %H:%M UTC")
-if [ -z "${GITLAB_API:-}" ]; then
-    log "GITLAB_API not set (define it as a project/group CI/CD variable); skipping notification"
-    exit 0
+if [ -n "${GITLAB_API:-}" ]; then
+    API_URL="${GITLAB_API}/api/v4"
+elif [ -n "${CI_API_V4_URL:-}" ]; then
+    API_URL="${CI_API_V4_URL}"
+else
+    echo "ERROR: GITLAB_API or CI_API_V4_URL must be set." >&2
+    exit 1
 fi
-API_URL="${GITLAB_API}/api/v4"
 
-TOTAL_CVES="0"; HIGH_COUNT="0"; CRITICAL_COUNT="0"; ACTIONABLE="0"; FIXES_APPLIED="0"
-
-if [ -f "security-reports/summary.json" ]; then
-    TOTAL_CVES=$(jq '.summary.total_cves // 0' security-reports/summary.json 2>/dev/null || echo "0")
-    HIGH_COUNT=$(jq '.summary.high_count // 0' security-reports/summary.json 2>/dev/null || echo "0")
-    CRITICAL_COUNT=$(jq '.summary.critical_count // 0' security-reports/summary.json 2>/dev/null || echo "0")
-    ACTIONABLE=$(jq '.summary.actionable_count // 0' security-reports/summary.json 2>/dev/null || echo "0")
+SUMMARY="security-reports/summary.json"
+if [ ! -f "$SUMMARY" ]; then
+    echo "ERROR: Remediation summary is missing; cannot send a reliable notification." >&2
+    exit 1
 fi
+if ! jq -e '(.error | not) and (.summary | type == "object") and
+    ([.summary.total_cves, .summary.high_count, .summary.critical_count, .summary.actionable_count] |
+     all(type == "number" and . >= 0 and floor == .))' "$SUMMARY" >/dev/null; then
+    echo "ERROR: Remediation summary is invalid or reports an aggregation error." >&2
+    exit 1
+fi
+TOTAL_CVES=$(jq -r '.summary.total_cves' "$SUMMARY")
+HIGH_COUNT=$(jq -r '.summary.high_count' "$SUMMARY")
+CRITICAL_COUNT=$(jq -r '.summary.critical_count' "$SUMMARY")
+ACTIONABLE=$(jq -r '.summary.actionable_count' "$SUMMARY")
+FIXES_APPLIED="0"
 
 if [ -f "security-reports/.fixes-applied" ]; then
-    FIXES_APPLIED=$(cat security-reports/.fixes-applied 2>/dev/null || echo "0")
+    FIXES_APPLIED=$(cat security-reports/.fixes-applied)
+    if ! [[ "$FIXES_APPLIED" =~ ^[0-9]+$ ]]; then
+        echo "ERROR: Invalid remediation fixes count." >&2
+        exit 1
+    fi
 fi
 
 MR_TITLE="_No MR created_"
@@ -84,5 +99,5 @@ PAYLOAD=$(cat <<EOF
 EOF
 )
 
-curl -s -X POST "${SLACK_WEBHOOK_URL}" -H 'Content-Type: application/json' -d "$PAYLOAD" >/dev/null || true
+curl --fail --silent --show-error -X POST "${SLACK_WEBHOOK_URL}" -H 'Content-Type: application/json' -d "$PAYLOAD" >/dev/null
 log "Notification sent"

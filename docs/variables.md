@@ -10,7 +10,7 @@ each consuming project sets its own value.
 | `GITLAB_API` | Base URL of the GitLab instance | Group |
 | `ADORSYS_CI_TEMPLATES_PROJECT` | Path of this templates repo | Group |
 | `ADORSYS_CI_TEMPLATES_REF` | Ref/tag to pull shared scripts from | Group |
-| `GITLAB_TOKEN` | PAT (api + write_repository scope) for MRs, releases, rollback, and Renovate | Group |
+| `GITLAB_TOKEN` | PAT (api + write_repository scope) for MRs, releases, rollback, Renovate, and reading remediation scripts; its user must have access to the templates project | Group |
 | `GITLAB_USER_NAME` / `GITLAB_USER_EMAIL` | Bot git commit identity | Group |
 | `GITLAB_PAGES_DOMAIN` | Pages domain for vuln-report links | Group |
 | `NVD_API_KEY` | NVD API key for OWASP scans | Group |
@@ -117,6 +117,16 @@ required by that job.
 | `SONAR_ENABLE_SUPPORT_BRANCH_ANALYSIS`, `SONAR_ANALYSIS_TIMEOUT`, `SONAR_FAIL_TYPES`, `SONAR_FAIL_SEVERITIES`, `SONAR_COMPLIANCE_FILTERS` | SonarQube Maven and CLI scans; optional overrides (`SONAR_FAIL_TYPES` defaults `BUG,VULNERABILITY`, `SONAR_FAIL_SEVERITIES` defaults `BLOCKER,CRITICAL,MAJOR`, `SONAR_COMPLIANCE_FILTERS` is a `;`-separated list of `Label=filter=values` (explicit categories) or `Label=facet` (all categories, discovered from the `api/issues/search` facet) entries, defaulting to OWASP Top 10 2021 + CWE Top 25 2024 + PCI DSS 4.0 + OWASP ASVS 4.0 + STIG ASD V5R3 + CASA — set empty to disable the compliance gate) | Project |
 | `GITLAB_CI_TEMPLATES_REF`, `SECURITY_BASE_BRANCH`, `SEVERITY_FILTER`, `OFFLINE_MODE` | Unified remediation; optional overrides | Project |
 | `SCHEDULE_TYPE` | Scheduled npm audit, Renovate, and remediation jobs | Pipeline schedule |
+
+Unified remediation and its Slack notification download scripts from the
+templates project using `GITLAB_TOKEN` when set, otherwise `CI_JOB_TOKEN`.
+The token must be authorized to read that project's repository; for job tokens,
+configure the templates project's inbound job-token allowlist as required by
+GitLab. They use `GITLAB_CI_TEMPLATES_REF` when set, then
+`ADORSYS_CI_TEMPLATES_REF`, and otherwise the latest template tag. Configure the
+ref to match the included templates. Failed downloads or missing remediation
+summaries are reported as job failures (the notification job remains
+allowed to fail); no clean-scan notification is sent for a missing summary.
 
 ## GitHub Actions secrets (this repo's own mirror workflow)
 
