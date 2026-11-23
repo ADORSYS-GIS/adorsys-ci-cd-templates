@@ -322,7 +322,9 @@ bom = {
     "serialNumber": "urn:uuid:12345678-1234-1234-1234-123456789abc",
     "version": 1,
     "metadata": {"component": {"type": "library", "name": artifact, "version": version, "bom-ref": root_ref}},
-    "components": [{"type": "library", "name": "mock-library", "version": "1.0.0", "bom-ref": ref, "purl": ref}],
+    "components": [{"type": "library", "name": "mock-library", "version": "1.0.0", "bom-ref": ref, "purl": ref,
+                    "licenses": [{"license": {"id": "Apache-2.0"}}, {"license": {"id": "MIT"}},
+                                 {"license": {"name": "Example License"}}]}],
     "dependencies": [{"ref": root_ref, "dependsOn": [ref]}, {"ref": ref, "dependsOn": []}],
 }
 Path("target/sbom.json").write_text(json.dumps(bom))
@@ -352,6 +354,7 @@ Path("target/sbom.json").write_text(json.dumps(bom))
             report = (project / f"target/sbom-{branch}.html").read_text()
             self.assertIn(f"<dd>{branch}</dd>", report)
             self.assertIn(f"<dd>{commit}</dd>", report)
+            self.assertIn("Apache-2.0; MIT; Example License", report)
         self.assertEqual(
             (project / "target/sbom.json").read_bytes(),
             (project / "target/sbom-scheduled.json").read_bytes(),
@@ -412,6 +415,69 @@ Path("target/sbom.json").write_text(json.dumps(bom))
                 with self.assertRaisesRegex(SystemExit, "cannot write HTML inventory"):
                     runpy.run_path(str(VALIDATOR), run_name="__main__")
             self.assertFalse(report_path.exists())
+
+    def test_validator_multiple_licenses_and_invalid_license_choices(self):
+        project = self.temp_path / "license-test"
+        project.mkdir()
+        shutil.copyfile(FIXTURES / "single/pom.xml", project / "pom.xml")
+        bom_path = project / "sbom.json"
+        bom = {
+            "bomFormat": "CycloneDX",
+            "specVersion": "1.6",
+            "version": 1,
+            "metadata": {"component": {"type": "application", "name": "sbom-single-fixture", "bom-ref": "root"}},
+            "components": [{
+                "type": "library", "name": "dependency", "bom-ref": "dependency",
+                "purl": "pkg:maven/example/dependency@1",
+                "licenses": [
+                    {"license": {"id": "Apache-2.0"}},
+                    {"license": {"id": "MIT"}},
+                    {"license": {"name": "Example License"}},
+                ],
+            }],
+            "dependencies": [{"ref": "root", "dependsOn": ["dependency"]}, {"ref": "dependency"}],
+        }
+        command = ["python3", str(VALIDATOR), str(bom_path), str(SCHEMA), str(project / "pom.xml"), "branch", "commit"]
+        bom_path.write_text(json.dumps(bom))
+        result = run(command, project, check=False)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        report = bom_path.with_suffix(".html").read_text()
+        self.assertIn("Apache-2.0; MIT; Example License", report)
+
+        bom["components"][0]["licenses"] = [{"expression": "MIT OR Apache-2.0"}]
+        bom_path.write_text(json.dumps(bom))
+        result = run(command, project, check=False)
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn("MIT OR Apache-2.0", bom_path.with_suffix(".html").read_text())
+
+        for licenses in (
+            [{"license": {"id": "Apache-2.0"}}, {"license": {"id": "invalid-id"}}, {"license": {"name": "Example"}}],
+            [{"expression": "MIT"}, {"expression": "Apache-2.0"}, {"expression": "BSD-3-Clause"}],
+        ):
+            with self.subTest(licenses=licenses):
+                bom["components"][0]["licenses"] = licenses
+                bom_path.write_text(json.dumps(bom))
+                result = run(command, project, check=False)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("not valid against CycloneDX 1.6", result.stdout)
+                self.assertFalse(bom_path.with_suffix(".html").exists())
+
+    def test_additional_items_validator_preserves_draft7_rules(self):
+        validator_module = runpy.run_path(str(VALIDATOR))
+        validator_class = validator_module["jsonschema"].validators.extend(
+            validator_module["jsonschema"].Draft7Validator,
+            {"additionalItems": validator_module["validate_additional_items"]},
+        )
+        for additional, instance, expected in (
+            (False, [{"a": 1}], True),
+            (False, [{"a": 1}, {"b": 2}, {"c": 3}], False),
+            (True, [{"a": 1}, {"b": 2}, {"c": 3}], True),
+            ({"type": "string"}, [{"a": 1}, "allowed"], True),
+            ({"type": "string"}, [{"a": 1}, {"b": 2}], False),
+        ):
+            with self.subTest(additional=additional, instance=instance):
+                schema = {"items": [{"type": "object"}], "additionalItems": additional}
+                self.assertEqual(validator_class(schema).is_valid(instance), expected)
 
     def test_html_inventory_escapes_values_and_links_all_dependencies(self):
         render = runpy.run_path(str(VALIDATOR))["render_html"]

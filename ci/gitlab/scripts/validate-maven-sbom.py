@@ -15,6 +15,18 @@ def fail(message):
     raise SystemExit(f"SBOM validation failed: {message}")
 
 
+def validate_additional_items(validator, additional_items, instance, schema):
+    if not validator.is_type(instance, "array") or validator.is_type(schema.get("items", {}), "object"):
+        return
+    item_count = len(schema.get("items", []))
+    extras = instance[item_count:]
+    if validator.is_type(additional_items, "object"):
+        for index, item in enumerate(extras, start=item_count):
+            yield from validator.descend(item, additional_items, path=index)
+    elif additional_items is False and extras:
+        yield jsonschema.ValidationError(f"Additional items are not allowed ({len(extras)} unexpected)")
+
+
 def schema_validator(schema, schema_path):
     store = {schema["$id"]: schema}
     for filename, digest in (
@@ -40,7 +52,12 @@ def schema_validator(schema, schema_path):
         store=store,
         handlers={"http": reject_remote_schema, "https": reject_remote_schema},
     )
-    return jsonschema.Draft7Validator(schema, resolver=resolver)
+    # Older distro jsonschema versions crash when formatting multiple object
+    # extras in a tuple; keep Draft 7 validation without sorting those objects.
+    validator_class = jsonschema.validators.extend(
+        jsonschema.Draft7Validator, {"additionalItems": validate_additional_items}
+    )
+    return validator_class(schema, resolver=resolver)
 
 
 def text(element, name):
