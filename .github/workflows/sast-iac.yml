@@ -48,7 +48,7 @@ jobs:
             -d . --output sarif --output-file-path /reports --soft-fail \
             "${baseline_args[@]}" 2>&1 | tee "$report_dir/scan.log"
 
-          if grep -Eq '^Traceback \(most recent call last\):|^[0-9]{4}-[0-9]{2}-[0-9]{2} .*Failed processing helm chart|^[[:space:]]*Parsing errors: [1-9]' "$report_dir/scan.log"; then
+          if grep -Eq '^Traceback \(most recent call last\):|^[0-9]{4}-[0-9]{2}-[0-9]{2} .*Failed processing helm chart|^([[:space:]]*|Passed checks: [0-9]+, Failed checks: [0-9]+, Skipped checks: [0-9]+, )Parsing errors: [1-9][0-9]*[[:space:]]*$' "$report_dir/scan.log"; then
             echo "::error::Checkov did not finish scanning all inputs."
             exit 1
           fi
