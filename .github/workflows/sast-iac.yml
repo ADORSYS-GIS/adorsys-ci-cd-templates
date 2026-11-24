@@ -28,79 +28,70 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Checkov
-        continue-on-error: ${{ github.base_ref != 'develop' && github.base_ref != 'main' && github.base_ref != 'master' && github.ref_name != 'develop' && github.ref_name != 'main' && github.ref_name != 'master' }}
+        id: checkov
         working-directory: ${{ inputs.working-directory }}
+        shell: bash
+        env:
+          CHECKOV_BASELINE: ${{ inputs.checkov-baseline }}
         run: |
-          # checkov writes a valid results.sarif into the working directory
-          # with --output sarif; stdout carries only the banner. Never
-          # hard-fail here, findings are gated by reviewdog below.
-          #
-          # Pass the baseline (if present) so accepted findings are suppressed
-          # while new ones are still gated. Unchanged without a baseline file.
-          BASELINE_ARGS=""
-          if [ -n "${{ inputs.checkov-baseline }}" ] && [ -f "${{ inputs.checkov-baseline }}" ]; then
-            BASELINE_ARGS="--baseline ${{ inputs.checkov-baseline }}"
+          report_dir=$(mktemp -d "$RUNNER_TEMP/checkov-sarif.XXXXXX")
+          sarif="$report_dir/results_sarif.sarif"
+
+          baseline_args=()
+          if [ -n "$CHECKOV_BASELINE" ] && [ -f "$CHECKOV_BASELINE" ]; then
+            baseline_args=(--baseline "$CHECKOV_BASELINE")
           fi
-          docker run --rm -v "$PWD:$PWD" -w "$PWD" \
-            bridgecrew/checkov:2.0.930 -d . --output sarif $BASELINE_ARGS > /dev/null || true
+
+          # Let reviewdog gate findings after filtering them to the PR's files.
+          docker run --rm -v "$PWD:$PWD" -v "$report_dir:/reports" -w "$PWD" \
+            bridgecrew/checkov:3.4.5@sha256:122602cf32cc72286155d39f1f234b7b594818f7b8d7fdf490701620e521368b \
+            -d . --output sarif --output-file-path /reports --soft-fail \
+            "${baseline_args[@]}" 2>&1 | tee "$report_dir/scan.log"
+
+          if grep -Eq '^Traceback \(most recent call last\):|^[0-9]{4}-[0-9]{2}-[0-9]{2} .*Failed processing helm chart|^[[:space:]]*Parsing errors: [1-9]' "$report_dir/scan.log"; then
+            echo "::error::Checkov did not finish scanning all inputs."
+            exit 1
+          fi
+          if ! jq -e '
+            .version == "2.1.0" and
+            (.runs | type == "array" and length > 0 and all(.[];
+              (.tool.driver.name | type == "string") and (.results | type == "array")
+            ))
+          ' "$sarif" >/dev/null; then
+            echo "::error::Checkov did not produce a usable SARIF report."
+            exit 1
+          fi
+          printf 'artifact=%s\nsarif=%s\n' "${report_dir##*/}" "$sarif" >> "$GITHUB_OUTPUT"
+      - name: Upload Checkov results
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.checkov.outputs.artifact }}
+          path: ${{ steps.checkov.outputs.sarif }}
+          if-no-files-found: error
       - name: Setup reviewdog
         uses: reviewdog/action-setup@d8edfce3dd5e1ec6978745e801f9c50b5ef80252 # v1.4.0
         with:
-          reviewdog_version: v0.21.2
+          reviewdog_version: v0.21.3
       - name: Report findings (reviewdog)
-        if: ${{ !cancelled() }}
         env:
           REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SARIF: ${{ steps.checkov.outputs.sarif }}
         run: |
-          SARIF="results.sarif"
-          if [ ! -f "$SARIF" ]; then
-            echo "::warning::No SARIF file at $SARIF; skipping reviewdog report."
-            exit 0
-          fi
           # PR -> inline check annotations; push/other -> commit check annotations.
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             REPORTER="github-pr-check"
           else
             REPORTER="github-check"
           fi
-          # Report findings from any file the PR touches (filter-mode=file),
-          # not just on added lines, so pre-existing issues surface when a
-          # file is modified. Fail on High/Critical (SARIF severity "error")
-          # in those files only on protected branches; advisory (fail-level=none)
-          # everywhere else.
+          # Report findings from files the PR touches. On develop, main, and
+          # master, SARIF errors fail the findings gate. Checkov can report all
+          # failed checks as errors when severity metadata is unavailable.
           if [ "${{ github.base_ref != 'develop' && github.base_ref != 'main' && github.base_ref != 'master' && github.ref_name != 'develop' && github.ref_name != 'main' && github.ref_name != 'master' }}" = "true" ]; then
             FAIL_LEVEL="none"
           else
             FAIL_LEVEL="error"
           fi
           echo "::group::reviewdog ($REPORTER, fail-level=$FAIL_LEVEL)"
-          # reviewdog exits 1 both when it finds issues at/above fail-level AND
-          # when it fails to post results to GitHub (transient 404/500 from the
-          # check-runs API). Retry posting on the transient API errors so the
-          # findings actually get reported; only fail the job on real findings.
-          set +e
-          RC=1
-          for attempt in 1 2 3; do
-            cat "$SARIF" | reviewdog -f=sarif -name="checkov" \
-              -reporter="$REPORTER" -filter-mode=file -fail-level="$FAIL_LEVEL" 2>&1 | tee /tmp/reviewdog.log
-            RC=${PIPESTATUS[1]}
-            if [ $RC -eq 0 ]; then
-              break
-            fi
-            # Real finding - retrying won't change it, fail immediately.
-            if grep -qE "found at least one issue" /tmp/reviewdog.log; then
-              break
-            fi
-            echo "::warning::reviewdog posting failed (attempt $attempt/3); retrying..."
-            sleep 5
-          done
-          set -e
-          if [ $RC -ne 0 ]; then
-            if grep -qE "found at least one issue" /tmp/reviewdog.log; then
-              echo "::error::reviewdog found issues at or above fail-level"
-              exit $RC
-            fi
-            echo "::warning::reviewdog could not post results after retries (GitHub API error); treating as advisory"
-            exit 0
-          fi
+          reviewdog -f=sarif -name="checkov" \
+            -reporter="$REPORTER" -filter-mode=file -fail-level="$FAIL_LEVEL" < "$SARIF"
           echo "::endgroup::"
