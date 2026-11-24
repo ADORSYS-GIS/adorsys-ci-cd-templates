@@ -355,9 +355,13 @@
     - mvn -version
   script:
     - docker --host "$DOCKER_HOST" version || true
-    # Stop the lifecycle before Surefire, then invoke only Failsafe and JaCoCo.
-    # Clean prevents stale unit coverage from contaminating the IT report.
-    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository -Djacoco.destFile=target/jacoco.exec -Djacoco.dataFile=target/jacoco.exec -DskipITs=false clean jacoco:prepare-agent test-compile failsafe:integration-test failsafe:verify jacoco:report --fail-at-end --errors
+    # Share integration execution data across reactor modules and generate reports
+    # after all tests finish, so downstream tests count toward upstream modules.
+    # Remove the shared file explicitly even if the project's clean directory
+    # has been customized, so an earlier job cannot inflate coverage.
+    - 'rm -f "${CI_PROJECT_DIR}/target/jacoco-it.exec"'
+    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository "-Djacoco.destFile=${CI_PROJECT_DIR}/target/jacoco-it.exec" "-Djacoco.dataFile=${CI_PROJECT_DIR}/target/jacoco-it.exec" -DskipITs=false clean jacoco:prepare-agent test-compile failsafe:integration-test failsafe:verify --fail-at-end --errors
+    - mvn -ntp -nsu -Dmaven.repo.local=.m2/repository "-Djacoco.destFile=${CI_PROJECT_DIR}/target/jacoco-it.exec" "-Djacoco.dataFile=${CI_PROJECT_DIR}/target/jacoco-it.exec" jacoco:report --fail-at-end --errors
     - *publish-jacoco
     # Gate the integration surface and list component boundaries missing an IT.
     - *coverage-gate
@@ -432,7 +436,9 @@
   script:
     - java -XX:+PrintFlagsFinal -version | grep -Ei "maxheapsize|maxram"
     - docker --host "$DOCKER_HOST" version || true
-    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository -Djacoco.destFile=target/jacoco.exec -Djacoco.dataFile=target/jacoco.exec -DskipITs=false clean jacoco:prepare-agent test-compile failsafe:integration-test failsafe:verify jacoco:report --fail-at-end --errors
+    - 'rm -f "${CI_PROJECT_DIR}/target/jacoco-it.exec"'
+    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository "-Djacoco.destFile=${CI_PROJECT_DIR}/target/jacoco-it.exec" "-Djacoco.dataFile=${CI_PROJECT_DIR}/target/jacoco-it.exec" -DskipITs=false clean jacoco:prepare-agent test-compile failsafe:integration-test failsafe:verify --fail-at-end --errors
+    - mvn -ntp -nsu --settings ${MAVEN_SETTINGS_PATH} -Dmaven.repo.local=.m2/repository "-Djacoco.destFile=${CI_PROJECT_DIR}/target/jacoco-it.exec" "-Djacoco.dataFile=${CI_PROJECT_DIR}/target/jacoco-it.exec" jacoco:report --fail-at-end --errors
     - *publish-jacoco
     - *coverage-gate
 
