@@ -55,6 +55,9 @@ copy for remediation consumers. Both files are uploaded in the artifact named
 The referenced SPDX and JSF schemas are also vendored from the official
 CycloneDX specification 1.6 release and checksum-pinned. Schema references are
 resolved locally; validation does not fetch schemas from external websites.
+The validator retains Draft 7 `additionalItems` checks while working around an
+older distribution `jsonschema` error-formatting bug for multiple object
+entries, such as components declaring three or more licenses.
 
 The artifact also contains `target/sbom.html`, a self-contained, offline HTML
 inventory generated only after successful JSON validation. Download and open it
