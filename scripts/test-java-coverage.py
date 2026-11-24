@@ -27,6 +27,40 @@ def anchor_script(name):
 
 
 class JavaCoverageTest(unittest.TestCase):
+    def test_integration_jobs_share_fresh_data_and_report_after_tests(self):
+        for job, has_settings in (
+            (".test-java-integration", False),
+            (".test-java-integration-settings", True),
+        ):
+            with self.subTest(job=job):
+                match = re.search(
+                    rf"^{re.escape(job)}:\n(.*?)(?=^\.[\w-]+:|\Z)",
+                    TEMPLATE,
+                    re.MULTILINE | re.DOTALL,
+                )
+                self.assertIsNotNone(match)
+                script = match.group(1).split("  script:\n", 1)[1]
+                cleanup = script.index('rm -f "${CI_PROJECT_DIR}/target/jacoco-it.exec"')
+                commands = re.findall(r"^    - (mvn .+)$", script, re.MULTILINE)
+                self.assertEqual(len(commands), 2)
+                self.assertLess(cleanup, script.index(commands[0]))
+                for command in commands:
+                    self.assertIn("-Djacoco.destFile=${CI_PROJECT_DIR}/target/jacoco-it.exec", command)
+                    self.assertIn("-Djacoco.dataFile=${CI_PROJECT_DIR}/target/jacoco-it.exec", command)
+                    self.assertEqual("--settings ${MAVEN_SETTINGS_PATH}" in command, has_settings)
+                self.assertIn("failsafe:verify", commands[0])
+                self.assertIn(
+                    "clean jacoco:prepare-agent test-compile failsafe:integration-test failsafe:verify",
+                    commands[0],
+                )
+                self.assertIn("-DskipITs=false", commands[0])
+                self.assertNotIn("-Dsurefire.skip", commands[0])
+                self.assertNotIn("-Dskip.unit.tests", commands[0])
+                self.assertNotIn("jacoco:report", commands[0])
+                self.assertIn("jacoco:report", commands[1])
+                self.assertNotIn("-Djacoco.outputDirectory", " ".join(commands))
+                self.assertLess(script.index(commands[1]), script.index("*coverage-gate"))
+
     def run_script(self, directory, anchor, subdir="jacoco-unit", mode="all", shell=("sh", "-eu"), env=None):
         return subprocess.run(
             [*shell, "-c", anchor_script(anchor)],
@@ -204,22 +238,13 @@ class JavaCoverageTest(unittest.TestCase):
     def test_every_maven_variant_uses_matching_paths_and_publishes_before_gating(self):
         commands = re.findall(r"^    - (mvn .*jacoco:report.*)$", TEMPLATE, re.MULTILINE)
         self.assertEqual(len(commands), 4)
-        self.assertEqual(sum("failsafe:integration-test" in command for command in commands), 2)
-        for command in commands:
+        unit_commands = [command for command in commands if "clean jacoco:prepare-agent" in command]
+        self.assertEqual(len(unit_commands), 2)
+        for command in unit_commands:
             with self.subTest(command=command):
                 self.assertIn("-Djacoco.destFile=target/jacoco.exec", command)
                 self.assertIn("-Djacoco.dataFile=target/jacoco.exec", command)
                 self.assertNotIn("-Djacoco.outputDirectory", command)
-                self.assertIn("clean jacoco:prepare-agent", command)
-                if "failsafe:integration-test" in command:
-                    self.assertIn(
-                        "test-compile failsafe:integration-test failsafe:verify jacoco:report",
-                        command,
-                    )
-                    self.assertNotIn(" verify ", command)
-                    self.assertNotIn("-Dsurefire.skip", command)
-                    self.assertNotIn("-Dskip.unit.tests", command)
-                    self.assertIn("-DskipITs=false", command)
         self.assertEqual(
             len(re.findall(r"- \*publish-jacoco\n(?:    #.*\n)*    - \*coverage-gate", TEMPLATE)),
             4,
