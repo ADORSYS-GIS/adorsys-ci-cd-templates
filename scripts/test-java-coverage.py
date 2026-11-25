@@ -222,6 +222,52 @@ class JavaCoverageTest(unittest.TestCase):
                 self.assertIn(f"{var} is not a valid extended regular expression", result.stdout)
                 self.assertNotIn("Integration surface:", result.stdout)
 
+    def test_generated_api_interface_exclusion_is_opt_in_and_does_not_exclude_classes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sources = Path(directory) / "module/src/main/java/example"
+            sources.mkdir(parents=True)
+            for name, declaration in {
+                "OpenApi": '@Generated(value = "org.openapitools.codegen.languages.SpringCodegen")\n'
+                           '@RequestMapping\npublic interface OpenApi {}',
+                "SwaggerApi": '@jakarta.annotation.Generated(value = "io.swagger.codegen.v3.generators.java.SpringCodegen")\n'
+                              '@RequestMapping\npublic interface SwaggerApi {}',
+                "GeneratedClass": '@Generated(value = "org.openapitools.codegen.languages.SpringCodegen")\n'
+                                  '@RestController\npublic class GeneratedClass {}',
+                "Controller": '@RestController\npublic class Controller {\n'
+                              '  @Generated(value = "org.openapitools.codegen.languages.SpringCodegen")\n'
+                              '  void generatedMethod() {}\n}',
+            }.items():
+                (sources / f"{name}.java").write_text(
+                    "package example;\n" + declaration + "\n", encoding="utf-8"
+                )
+            self.write_report(
+                directory, "module",
+                "module,example,OpenApi,100,0,0,0,0,0,0,0,0,0\n"
+                "module,example,SwaggerApi,100,0,0,0,0,0,0,0,0,0\n"
+                "module,example,GeneratedClass,10,90,0,0,0,0,0,0,0,0\n"
+                "module,example,Controller,10,90,0,0,0,0,0,0,0,0\n",
+            )
+            self.run_script(directory, "publish-jacoco", "jacoco-it", shell=self.GITLAB_SHELL)
+            for value, expected, coverage in (
+                (None, 1, "45.00% (180/400 instructions)"),
+                ("false", 1, "45.00% (180/400 instructions)"),
+                ("true", 0, "90.00% (180/200 instructions)"),
+            ):
+                with self.subTest(value=value):
+                    env = {} if value is None else {"IT_EXCLUDE_GENERATED_API_INTERFACES": value}
+                    result = self.run_script(
+                        directory, "coverage-gate", "jacoco-it", mode="integration",
+                        shell=self.GITLAB_SHELL, env=env,
+                    )
+                    self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+                    self.assertIn(coverage, result.stdout)
+            result = self.run_script(
+                directory, "coverage-gate", "jacoco-it", mode="integration",
+                shell=self.GITLAB_SHELL, env={"IT_EXCLUDE_GENERATED_API_INTERFACES": "invalid"},
+            )
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("IT_EXCLUDE_GENERATED_API_INTERFACES must be true or false", result.stdout)
+
     def test_integration_job_declares_test_reports_dir_and_presets_allow_opt_out(self):
         self.assertIn('COVERAGE_TEST_REPORTS_DIR: "failsafe-reports"', TEMPLATE)
         self.assertRegex(
