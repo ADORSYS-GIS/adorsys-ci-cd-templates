@@ -114,8 +114,10 @@
 # Optional env: COVERAGE_GATE_MODE (all | behavioral | integration),
 #   IT_SURFACE_MARKERS (integration mode only; overrides the default regex of
 #   direct source markers), IT_SERVICE_BOUNDARY_MARKERS (integration mode only;
-#   overrides dependency markers for @Service orchestration classes). Both
-#   regexes are validated first; an invalid pattern fails the job.
+#   overrides dependency markers for @Service orchestration classes),
+#   IT_EXCLUDE_GENERATED_API_INTERFACES (integration mode only; true excludes
+#   Swagger/OpenAPI-generated interfaces; defaults to false). Both regexes and
+#   the exclusion option are validated first; invalid values fail the job.
 # ─────────────────────────────────────────────────────────────────────────────
 .coverage-gate-step: &coverage-gate |
   min="${COVERAGE_MINIMUM}"
@@ -132,6 +134,11 @@
   if [ "${COVERAGE_GATE_MODE}" = "integration" ]; then
     markers="${IT_SURFACE_MARKERS:-@(Rest)?Controller|@(Controller|RestController)Advice|@RequestMapping|@(Get|Post|Put|Delete|Patch)Mapping|@FeignClient|@Repository|@Entity|@Table|JpaRepository|CrudRepository|PagingAndSortingRepository|JpaSpecificationExecutor|@Query|EntityManager|JdbcTemplate|DataSource|@Transactional|@KafkaListener|@JmsListener|@RabbitListener|@StreamListener|@EventListener|@MessageMapping|@Scheduled|RestTemplate|WebClient|@ConfigurationProperties|@EnableConfigurationProperties|@Configuration|implements Filter|OncePerRequestFilter}"
     service_boundary_markers="${IT_SERVICE_BOUNDARY_MARKERS:-Spi|Remote|Client|Repository|Dao|Gateway|Connector|Publisher|Producer|Consumer|Subscriber|EventService|Kafka|Jms|Rabbit|JdbcTemplate|DataSource|EntityManager}"
+    exclude_generated="${IT_EXCLUDE_GENERATED_API_INTERFACES:-false}"
+    case "$exclude_generated" in
+      true|false) ;;
+      *) echo "Coverage summary (${label}): IT_EXCLUDE_GENERATED_API_INTERFACES must be true or false"; exit 1 ;;
+    esac
     # Validate user-overridable regexes first: the scan below tolerates grep's
     # "no match" status, which would otherwise also hide an invalid pattern
     # (grep exit 2) and produce an empty surface, i.e. a false green.
@@ -160,6 +167,16 @@
           done || true
     } \
       | while IFS= read -r f; do
+          if [ "$exclude_generated" = "true" ] && awk '
+            /^[[:space:]]*@((jakarta|javax)\.annotation\.)?Generated[[:space:]]*\(.*(io\.swagger\.codegen|org\.openapitools\.codegen)/ { generated = 1 }
+            /^[[:space:]]*(public[[:space:]]+)?(abstract[[:space:]]+|final[[:space:]]+)?(class|interface|enum|record)[[:space:]]/ {
+              exclude = generated && $0 ~ /(^|[[:space:]])interface[[:space:]]/
+              exit
+            }
+            END { exit !exclude }
+          ' "$f"; then
+            continue
+          fi
           pkg=$(sed -nE 's/^[[:space:]]*package[[:space:]]+([A-Za-z0-9_.]+)[[:space:]]*;.*/\1/p' "$f" | head -1)
           cls=$(basename "$f" .java)
           if [ -n "$pkg" ]; then echo "$pkg.$cls"; else echo "$cls"; fi
